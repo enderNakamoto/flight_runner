@@ -1,0 +1,225 @@
+{
+  "$schema": "asset-index v1",
+  "description": "Asset index for flight_scroll — a Flappy Bird-style sidescroller where the player flies a passenger plane through hazards.",
+  "basePath": "/assets",
+
+  "player": {
+    "plane": {
+      "path": "plane.png",
+      "width": 256,
+      "height": 128,
+      "type": "image",
+      "facing": "right",
+      "notes": "Hero sprite. Pixel-art passenger jet. Scrolls in place horizontally; the world scrolls left past it."
+    }
+  },
+
+  "backgrounds": {
+    "_notes": "All backgrounds are designed to tile horizontally for parallax scrolling. Pair a far-layer sky with a near-layer silhouette for depth.",
+    "blue_sky": {
+      "path": "backgrounds/blue_sky.png",
+      "width": 1774,
+      "height": 887,
+      "type": "tileSprite",
+      "scroll": "horizontal",
+      "mood": "day_clear"
+    },
+    "blue_sky_mountain": {
+      "path": "backgrounds/blue_sky_mountain.png",
+      "width": 1774,
+      "height": 887,
+      "type": "tileSprite",
+      "scroll": "horizontal",
+      "mood": "day_clear",
+      "notes": "Has mountain/tree silhouette band at bottom — good as mid/near layer over plain blue_sky."
+    },
+    "sunset": {
+      "path": "backgrounds/sunset.png",
+      "width": 2172,
+      "height": 724,
+      "type": "tileSprite",
+      "scroll": "horizontal",
+      "mood": "evening"
+    },
+    "dusk": {
+      "path": "backgrounds/dusk.png",
+      "width": 2172,
+      "height": 724,
+      "type": "tileSprite",
+      "scroll": "horizontal",
+      "mood": "dusk"
+    },
+    "night_clear": {
+      "path": "backgrounds/night_clear.png",
+      "width": 1774,
+      "height": 887,
+      "type": "tileSprite",
+      "scroll": "horizontal",
+      "mood": "night_calm"
+    },
+    "night_cloudy": {
+      "path": "backgrounds/night_cloudy.png",
+      "width": 1774,
+      "height": 887,
+      "type": "tileSprite",
+      "scroll": "horizontal",
+      "mood": "night_calm"
+    },
+    "night_cloudy_moon": {
+      "path": "backgrounds/night_cloudy_moon.png",
+      "width": 1774,
+      "height": 887,
+      "type": "tileSprite",
+      "scroll": "horizontal",
+      "mood": "night_calm",
+      "notes": "Contains a moon — avoid duplicating moon when tiling; use single instance or wide canvas."
+    },
+    "night_stormy": {
+      "path": "backgrounds/night_stormy.png",
+      "width": 600,
+      "height": 260,
+      "type": "tileSprite",
+      "scroll": "horizontal",
+      "mood": "storm",
+      "notes": "Lightning-lit clouds — good hardest-level background."
+    }
+  },
+
+  "obstacles": {
+    "top_pillar": {
+      "path": "obstacles/top_pillar.png",
+      "width": 1024,
+      "height": 1536,
+      "type": "image",
+      "role": "pipe_top",
+      "anchor": "top",
+      "notes": "Flappy Bird-style upper pillar (cloud column). Place flush with top of screen; gap below."
+    },
+    "bottom_pillar": {
+      "path": "obstacles/bottom_pillar.png",
+      "width": 1024,
+      "height": 1536,
+      "type": "image",
+      "role": "pipe_bottom",
+      "anchor": "bottom",
+      "notes": "Flappy Bird-style lower pillar. Place flush with bottom of screen; gap above. Pair with top_pillar at the same x for a passable gap."
+    },
+    "bird_big": {
+      "path": "obstacles/bird_big.png",
+      "width": 1536,
+      "height": 1024,
+      "type": "image",
+      "role": "enemy_bird",
+      "facing": "right",
+      "movement": "straight_or_sine",
+      "notes": "Large crow. Most of the canvas is transparent — trim with a tight body in physics. Has wings-up pose suitable for a 1-frame flap."
+    },
+    "bird_small": {
+      "path": "obstacles/bird_small.png",
+      "width": 1536,
+      "height": 1024,
+      "type": "image",
+      "role": "enemy_bird",
+      "facing": "left",
+      "movement": "straight_or_sine",
+      "notes": "Smaller brown hawk. Faster but lower damage variant."
+    },
+    "drone": {
+      "path": "obstacles/drone.png",
+      "width": 1774,
+      "height": 887,
+      "type": "image",
+      "role": "enemy_aircraft",
+      "facing": "right",
+      "movement": "hover_or_strafe",
+      "notes": "Predator-style drone silhouette. Slow, can be a launcher for missiles."
+    },
+    "jet": {
+      "path": "obstacles/jet.png",
+      "width": 1774,
+      "height": 887,
+      "type": "image",
+      "role": "enemy_aircraft",
+      "facing": "left",
+      "movement": "fast_flyby",
+      "notes": "Fighter jet with afterburner — fastest enemy."
+    },
+    "ufo": {
+      "path": "obstacles/ufo.png",
+      "width": 1536,
+      "height": 1024,
+      "type": "image",
+      "role": "enemy_special",
+      "facing": "neutral",
+      "movement": "zigzag",
+      "notes": "Rare/boss-tier enemy. Symmetric — no flip needed."
+    },
+    "missiles": {
+      "path": "obstacles/missiles.png",
+      "width": 1774,
+      "height": 887,
+      "type": "spritesheet",
+      "role": "projectile",
+      "facing": "right",
+      "grid": {
+        "columns": 3,
+        "rows": 4,
+        "totalFrames": 12,
+        "frameWidth": 591,
+        "frameHeight": 222,
+        "notes": "1774/3 ≈ 591.33 and 887/4 ≈ 221.75 — frames are not pixel-perfect; small margin trim may be needed. For Phaser, load with Phaser.Loader.spritesheet using frameWidth: 591, frameHeight: 222."
+      },
+      "frames": [
+        { "index": 0,  "row": 0, "col": 0, "name": "missile_red_stripe",      "tier": "common",   "trail": "fire" },
+        { "index": 1,  "row": 0, "col": 1, "name": "missile_yellow_band",     "tier": "common",   "trail": "fire" },
+        { "index": 2,  "row": 0, "col": 2, "name": "missile_black_tip",       "tier": "common",   "trail": "fire" },
+        { "index": 3,  "row": 1, "col": 0, "name": "missile_army_green",      "tier": "common",   "trail": "fire" },
+        { "index": 4,  "row": 1, "col": 1, "name": "missile_white_red_fin",   "tier": "common",   "trail": "fire" },
+        { "index": 5,  "row": 1, "col": 2, "name": "missile_brown_tan",       "tier": "common",   "trail": "fire" },
+        { "index": 6,  "row": 2, "col": 0, "name": "missile_silver_grey",     "tier": "uncommon", "trail": "ice_blue" },
+        { "index": 7,  "row": 2, "col": 1, "name": "missile_black_red",       "tier": "uncommon", "trail": "fire" },
+        { "index": 8,  "row": 2, "col": 2, "name": "missile_gold_green",      "tier": "uncommon", "trail": "plasma_green" },
+        { "index": 9,  "row": 3, "col": 0, "name": "missile_nuclear",         "tier": "rare",     "trail": "plasma_green", "notes": "Radiation marking — high damage / boss." },
+        { "index": 10, "row": 3, "col": 1, "name": "missile_blue_stripe",     "tier": "rare",     "trail": "ice_blue" },
+        { "index": 11, "row": 3, "col": 2, "name": "missile_skull_poison",    "tier": "rare",     "trail": "fire",         "notes": "Skull/poison icon — hardest tier." }
+      ]
+    }
+  },
+
+  "boosts": {
+    "fuel_token": {
+      "path": "boosts/fuel_token.png",
+      "width": 1254,
+      "height": 1254,
+      "type": "image",
+      "role": "pickup",
+      "effect": "refill_fuel",
+      "notes": "Square aspect coin. Pickup that grants fuel/score. Spin animation can be done by tweening scaleX between -1 and 1."
+    }
+  },
+
+  "loaderHints": {
+    "phaser": {
+      "preload": [
+        "this.load.image('plane', 'assets/plane.png');",
+        "this.load.image('bg_blue_sky', 'assets/backgrounds/blue_sky.png');",
+        "this.load.image('bg_blue_sky_mountain', 'assets/backgrounds/blue_sky_mountain.png');",
+        "this.load.image('bg_sunset', 'assets/backgrounds/sunset.png');",
+        "this.load.image('bg_dusk', 'assets/backgrounds/dusk.png');",
+        "this.load.image('bg_night_clear', 'assets/backgrounds/night_clear.png');",
+        "this.load.image('bg_night_cloudy', 'assets/backgrounds/night_cloudy.png');",
+        "this.load.image('bg_night_cloudy_moon', 'assets/backgrounds/night_cloudy_moon.png');",
+        "this.load.image('bg_night_stormy', 'assets/backgrounds/night_stormy.png');",
+        "this.load.image('top_pillar', 'assets/obstacles/top_pillar.png');",
+        "this.load.image('bottom_pillar', 'assets/obstacles/bottom_pillar.png');",
+        "this.load.image('bird_big', 'assets/obstacles/bird_big.png');",
+        "this.load.image('bird_small', 'assets/obstacles/bird_small.png');",
+        "this.load.image('drone', 'assets/obstacles/drone.png');",
+        "this.load.image('jet', 'assets/obstacles/jet.png');",
+        "this.load.image('ufo', 'assets/obstacles/ufo.png');",
+        "this.load.spritesheet('missiles', 'assets/obstacles/missiles.png', { frameWidth: 591, frameHeight: 222 });",
+        "this.load.image('fuel_token', 'assets/boosts/fuel_token.png');"
+      ]
+    }
+  }
+}

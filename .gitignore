@@ -1,0 +1,32 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Claude Code local-only state
+.claude/settings.local.json
+
+# Node / TS (will apply once apps/web and packages/sim land)
+node_modules/
+dist/
+.turbo/
+.next/
+*.log
+
+# Rust (will apply once services/prover and contracts/flight_scroll land)
+target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+proof_artifacts.json
+*.wasm.gz
