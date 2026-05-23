@@ -118,18 +118,21 @@ Determinism guarantees in `core/fp.rs`:
 - **Custom PRNG** (`prng.rs`) — splittable, deterministic, state lives on `GameState`. Used by:
   - Pillar gap height and spawn cadence
   - Enemy aircraft type roll (weighted table) and trajectory params (sine amplitude, zigzag phase)
-  - Missile spawn timing from drones/jets
+  - Missile spawn timing and tier roll from drones/jets
   - Fuel token spawn position
+  - Cosmetic background-variant pick (within a mood bucket)
+- **Stage table** (`stages.rs`) — `STAGE_TABLE: [StageParams; 5]` const drives per-tick spawn weights, gap sizes, scroll speed, fuel cadence, and which enemy/missile tiers can appear. Stage advancement is a pure function of `state.score` (see architecture.md §4). Because the table is a constant baked into the guest, any tuning change produces a new `image_id` and the contract admin must rotate the pinned image_id before new proofs verify.
 - **Tick ordering** — `step()` runs subsystems in a fixed order:
   1. Read input (flap bit for this tick)
   2. Apply gravity + flap impulse to plane
-  3. Drain fuel
-  4. Spawn obstacles / pickups (PRNG-driven, by tick count)
-  5. Advance obstacles (scroll left, sine wobble, etc.)
+  3. Drain fuel (rate from `STAGE_TABLE[state.stage].fuelDrainPerTick`)
+  4. Spawn obstacles / pickups (PRNG-driven, parameters from current stage row)
+  5. Advance obstacles (scroll left at `STAGE_TABLE[state.stage].scrollSpeed`, sine wobble, etc.)
   6. Advance missiles
   7. Collision pass (plane × obstacles, plane × missiles, plane × pickups, plane × world bounds)
   8. Apply scoring deltas (pillar passed, pickup collected, +1 per second of survival)
-  9. Check game-over (collision OR fuel == 0 OR voluntary quit)
+  9. Stage check — if `score` crossed next gate, bump `state.stage` and set transient `stage_just_changed` flag
+  10. Check game-over (collision OR fuel == 0 OR voluntary quit)
 - **Zero-copy mutation** in the hot path: `step_mut(&mut State)` in the guest, avoiding per-tick clones.
 - **Raw byte I/O** to the zkVM — bypasses serde inside the guest (encoding lives in `encode_raw_run` at `core/src/fp.rs`).
 - **SHA-256 precompile** in RISC Zero zkVM cuts hashing from millions of cycles to thousands. Used once per run to hash the input transcript.

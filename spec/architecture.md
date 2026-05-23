@@ -6,7 +6,11 @@ Companion to [`zk_risk_0_stellar.md`](./zk_risk_0_stellar.md). That doc covers t
 
 ## 1. Product summary
 
-**flight_scroll** is a single-player Flappy Bird-style sidescroller. The player flies a passenger jet (`public/assets/plane.png`) through cloud pillars, enemy birds, drones, jets, UFOs, and missiles, picking up fuel tokens for score. The world scrolls horizontally; the plane scrolls in place. Game ends on collision, fuel-out, or voluntary quit. Score is submitted to an on-chain leaderboard, with a ZK proof attesting that the score was earned by playing the game (not fabricated).
+**flight_scroll** is a single-player Flappy Bird-style sidescroller. The player flies a passenger jet (`public/assets/plane.png`) through cloud pillars, enemy birds, drones, jets, UFOs, and missiles, picking up fuel tokens for score. The world scrolls horizontally; the plane scrolls in place. Game ends on collision, fuel-out, or voluntary quit.
+
+The run escalates through **five named difficulty stages** (Common → Uncommon → Rare → Legendary → Mythical), each unlocking new threats and tightening existing ones. The last two stages are designed to be hard to beat — Legendary gates skilled play, Mythical gates the leaderboard.
+
+Score is submitted to an on-chain leaderboard, with a ZK proof attesting that the score was earned by playing the game (not fabricated).
 
 ### Goals
 - **Cheat-resistant scores** without trusting the player's browser or the score-relay server.
@@ -90,8 +94,9 @@ Modules:
 - `state.ts` — `GameState` type + `create_initial_state(seed)`
 - `step.ts` — `step(state, input) → newState`, the per-tick reducer
 - `physics.ts` — plane gravity, flap impulse, world-bounds collision
-- `obstacles.ts` — pillar / enemy / missile spawn tables, advance, collision
-- `pickups.ts` — fuel token spawn, collection, fuel drain
+- `stages.ts` — `STAGE_TABLE` constant + `maybe_advance_stage()` (see §4)
+- `obstacles.ts` — pillar / enemy / missile spawn tables, advance, collision (spawn weights driven by `STAGE_TABLE[state.stage]`)
+- `pickups.ts` — fuel token spawn, collection, fuel drain (cadence driven by current stage)
 - `scoring.ts` — score deltas (pillar passed +1, fuel collected +5, survival +1/sec)
 - `gameover.ts` — terminal conditions (collision, fuel == 0, quit)
 - `hash.ts` — SHA-256 over the transcript (matches Rust `core/src/hash.rs` byte-for-byte)
@@ -201,11 +206,157 @@ Full settle path → see `zk_risk_0_stellar.md` §6.
 9. **Settlement** — two routes, identical outcome since `settle_run` is permissionless:
    - **Default**: relay auto-settles. Prepends the 4-byte Groth16 selector if the seal is raw 256 bytes, calls `settle_run(run_id, seal, journal)` from its own Stellar account, persists tx hash.
    - **Player-driven**: if the player kept the tab open, client polls `GET /api/runs/:id/proof`, fetches the seal+journal, signs and submits `settle_run` from their own wallet. Useful when the player wants to pay their own gas or when the relay is offline.
-10. **Client polls** `GET /api/runs/:id` for status. On `settled`, transition to `LeaderboardScene`, which reads `flight_scroll.get_top()` directly via RPC.
+10. **Client polls** `GET /api/runs/:id` for status. On `settled`, transition to `LeaderboardScene`, which reads `flight_scroll.get_top()` directly via RPC. Each row shows a stage-tier badge (Common / Uncommon / Rare / Legendary / Mythical) derived client-side from `entry.score`.
 
 ---
 
-## 4. Determinism — what to lock down
+## 4. Stage system
+
+The game escalates through **five named difficulty stages**. Each stage is a row in a constant lookup table consumed by the sim every tick; transitioning between stages is a pure function of `state.score`. Backgrounds, spawn weights, gap sizes, scroll speed, fuel cadence, and which enemy types can spawn are all per-stage. **Stages do not change the journal** — final stage is derivable from final score, so the leaderboard UI computes a tier badge client-side.
+
+### 4.1 The five stages
+
+| # | Name | Background mood | Score gate | New mechanics | Tightened from previous |
+|---|---|---|---|---|---|
+| 1 | **Common** | `blue_sky`, `blue_sky_mountain` (day_clear) | 0 | Pillars only | Tutorial baseline |
+| 2 | **Uncommon** | `sunset` (evening) | 50 | Enemy birds enter (`bird_big`, `bird_small`) | Pillar gap −20%, scroll +10% |
+| 3 | **Rare** | `dusk` | 150 | Drones (`drone`) + **common-tier missiles** (3 variants, fire trail) | Pillar gap −15%, scroll +5% |
+| 4 | **Legendary** | `night_clear`, `night_cloudy`, `night_cloudy_moon` (night_calm) | 350 | Jets (`jet`) enter — fast flybys + **uncommon-tier missiles** (ice_blue, plasma_green trails). Drone fire cadence ×2. | Pillar gap −15%, scroll +10%, fuel cadence −25% |
+| 5 | **Mythical** | `night_stormy` (storm) | 700 | UFO (`ufo`) spawns — rare zigzag boss + **rare-tier missiles** (nuclear, skull_poison, blue_stripe). Up to 3 missiles in flight. Lightning briefly dims visibility every ~8s. | Pillar gap −15%, scroll +10%, fuel pickups become scarce |
+
+Three properties worth flagging:
+
+- **Stage names extend the missile tier ladder** already used in `assets.json` (`common / uncommon / rare`). Each new stage matches a missile tier, so enemy threats and stage name share vocabulary.
+- **Backgrounds within a mood are cosmetic alternates.** Stage 1 picks between `blue_sky` and `blue_sky_mountain` at run start (seeded), Stage 4 picks among three night variants. The pick is deterministic from the seed so the prover replays the same visual, but rendering is decoupled from state — the sim doesn't care which background the client drew.
+- **The last two stages are designed to gate the leaderboard.** Reaching Legendary should be a target for skilled players; Mythical is hard-to-beat territory where leaderboard battles happen.
+
+### 4.2 The stage table in code
+
+```ts
+// packages/sim/src/stages.ts
+export const enum Stage { Common = 0, Uncommon, Rare, Legendary, Mythical }
+
+// enemy bitmask bits
+export const ENEMY_BIRD_BIG   = 1 << 0;
+export const ENEMY_BIRD_SMALL = 1 << 1;
+export const ENEMY_DRONE      = 1 << 2;
+export const ENEMY_JET        = 1 << 3;
+export const ENEMY_UFO        = 1 << 4;
+
+// missile tier bitmask bits (match assets.json tiers)
+export const MISSILE_COMMON   = 1 << 0;
+export const MISSILE_UNCOMMON = 1 << 1;
+export const MISSILE_RARE     = 1 << 2;
+
+export interface StageParams {
+  scoreGate:           number;  // u32 — entry threshold (score >= gate)
+  pillarGap:           number;  // Q24.8 — vertical gap between top/bottom pillar
+  scrollSpeed:         number;  // Q24.8 — world scroll per tick
+  fuelDrainPerTick:    number;  // Q24.8 — base drain rate
+  fuelSpawnPeriod:     number;  // u32 — ticks between fuel token spawns
+  enemySpawnPeriod:    number;  // u32 — ticks between enemy spawn rolls
+  enemyMask:           number;  // u8 — which enemy types can spawn this stage
+  missileTierMask:     number;  // u8 — which missile tiers drones/jets fire
+  missileMaxInFlight:  number;  // u8 — simultaneous missile cap
+  visibilityFlicker:   boolean; // Mythical-only: lightning visibility dims
+}
+
+export const STAGE_TABLE: readonly StageParams[] = [
+  /* Common    */ {
+    scoreGate: 0,   pillarGap: fp(0.35), scrollSpeed: fp(2.0),
+    fuelDrainPerTick: fp(0.04), fuelSpawnPeriod: 300,
+    enemySpawnPeriod: 0, enemyMask: 0, missileTierMask: 0, missileMaxInFlight: 0,
+    visibilityFlicker: false,
+  },
+  /* Uncommon  */ {
+    scoreGate: 50,  pillarGap: fp(0.28), scrollSpeed: fp(2.2),
+    fuelDrainPerTick: fp(0.05), fuelSpawnPeriod: 320,
+    enemySpawnPeriod: 600, enemyMask: ENEMY_BIRD_BIG | ENEMY_BIRD_SMALL,
+    missileTierMask: 0, missileMaxInFlight: 0, visibilityFlicker: false,
+  },
+  /* Rare      */ {
+    scoreGate: 150, pillarGap: fp(0.24), scrollSpeed: fp(2.3),
+    fuelDrainPerTick: fp(0.06), fuelSpawnPeriod: 340,
+    enemySpawnPeriod: 500,
+    enemyMask: ENEMY_BIRD_BIG | ENEMY_BIRD_SMALL | ENEMY_DRONE,
+    missileTierMask: MISSILE_COMMON, missileMaxInFlight: 1,
+    visibilityFlicker: false,
+  },
+  /* Legendary */ {
+    scoreGate: 350, pillarGap: fp(0.20), scrollSpeed: fp(2.5),
+    fuelDrainPerTick: fp(0.07), fuelSpawnPeriod: 450,    // fuel cadence -25%
+    enemySpawnPeriod: 380,
+    enemyMask: ENEMY_BIRD_BIG | ENEMY_BIRD_SMALL | ENEMY_DRONE | ENEMY_JET,
+    missileTierMask: MISSILE_COMMON | MISSILE_UNCOMMON, missileMaxInFlight: 2,
+    visibilityFlicker: false,
+  },
+  /* Mythical  */ {
+    scoreGate: 700, pillarGap: fp(0.17), scrollSpeed: fp(2.7),
+    fuelDrainPerTick: fp(0.08), fuelSpawnPeriod: 700,    // fuel scarce
+    enemySpawnPeriod: 300,
+    enemyMask: ENEMY_BIRD_BIG | ENEMY_BIRD_SMALL | ENEMY_DRONE | ENEMY_JET | ENEMY_UFO,
+    missileTierMask: MISSILE_COMMON | MISSILE_UNCOMMON | MISSILE_RARE,
+    missileMaxInFlight: 3, visibilityFlicker: true,
+  },
+];
+
+export function stageForScore(score: number): Stage {
+  for (let i = STAGE_TABLE.length - 1; i >= 0; i--) {
+    if (score >= STAGE_TABLE[i].scoreGate) return i as Stage;
+  }
+  return Stage.Common;
+}
+```
+
+Rust mirror lives at `services/prover/core/src/stages.rs` with the same constants byte-for-byte (verified by the parity test). The leaderboard UI imports `stageForScore` to render the tier badge.
+
+### 4.3 Stage transitions in `step()`
+
+The reducer checks at the end of each tick whether `state.score` has crossed the next stage's gate:
+
+```rust
+fn maybe_advance_stage(state: &mut GameState) {
+    let next = (state.stage as usize) + 1;
+    if next < STAGE_TABLE.len() && state.score >= STAGE_TABLE[next].score_gate {
+        state.stage = next as u8;
+        state.stage_just_changed = true;  // render-only cue
+    }
+}
+```
+
+`stage_just_changed` is a transient per-tick flag consumed by the Phaser layer for stage-up effects (flash, music swap, background crossfade). It is **not** hashed into the per-tick state digest used by the parity test — only persistent state fields are.
+
+### 4.4 Determinism implications
+
+The stage table is part of the sim, so any tuning change rebuilds the guest → new `image_id` → admin rotates the contract's pinned `image_id` for new proofs to verify. Old in-flight proofs settled within the rotation window fail with `ImageIdMismatch`. This means **balance tweaks are a coordinated operation**: rebuild guest, deploy new image_id, push new client. A small price for the cheat-resistance guarantee.
+
+`stages.ts` and `stages.rs` are covered by the cross-language parity test (`pnpm test:parity`) like the rest of the sim.
+
+### 4.5 Background selection (cosmetic, seeded)
+
+At run start, the client picks one background per mood bucket from the seed:
+
+```ts
+// apps/web/src/game/backgrounds.ts
+const BG_BY_MOOD: Record<Mood, string[]> = {
+  day_clear:  ['bg_blue_sky', 'bg_blue_sky_mountain'],
+  evening:    ['bg_sunset'],
+  dusk:       ['bg_dusk'],
+  night_calm: ['bg_night_clear', 'bg_night_cloudy', 'bg_night_cloudy_moon'],
+  storm:      ['bg_night_stormy'],
+};
+
+export function pickBackground(seed: number, mood: Mood): string {
+  const variants = BG_BY_MOOD[mood];
+  return variants[seed % variants.length];
+}
+```
+
+Same seed → same variant chosen → same visual on every replay. The sim never reads this; it's purely client-side, but seeding it from the run's seed means screen recordings of a run can be matched back to a proof.
+
+---
+
+## 5. Determinism — what to lock down
 
 The proof is only meaningful if the sim is bit-identical across TS and Rust. The places where determinism breaks easily:
 
@@ -222,7 +373,7 @@ Parity test (`pnpm test:parity`) runs a corpus of recorded transcripts through b
 
 ---
 
-## 5. Repository layout
+## 6. Repository layout
 
 ```
 flight_scroll/
@@ -237,8 +388,8 @@ flight_scroll/
 │
 ├── packages/
 │   └── sim/                     # Canonical TS sim
-│       ├── src/                 # fp, prng, state, step, physics, obstacles, pickups, scoring, hash
-│       └── __tests__/
+│       ├── src/                 # fp, prng, state, step, physics, stages, obstacles, pickups, scoring, hash
+│       └── __tests__/            # includes stage-transition + parity tests
 │
 ├── services/
 │   ├── server/                  # Bun score relay
@@ -279,7 +430,7 @@ flight_scroll/
 
 ---
 
-## 6. Tech stack summary
+## 7. Tech stack summary
 
 | Layer | Choice | Why |
 |---|---|---|
@@ -298,7 +449,7 @@ flight_scroll/
 
 ---
 
-## 7. Environments
+## 8. Environments
 
 | Env | Stellar | Verifier | Boundless |
 |---|---|---|---|
@@ -310,7 +461,7 @@ Env vars are listed in `zk_risk_0_stellar.md` §8.
 
 ---
 
-## 8. Security model
+## 9. Security model
 
 | Threat | Mitigation |
 |---|---|
@@ -325,11 +476,12 @@ Env vars are listed in `zk_risk_0_stellar.md` §8.
 
 ---
 
-## 9. Roadmap
+## 10. Roadmap
 
 **v1 (MVP) — flight_scroll alone**
 - Stellar Wallets Kit sign-in; player wallet signs `start_run` directly
 - Single-player Phaser game with canonical TS sim
+- **Five-stage difficulty system** (Common → Uncommon → Rare → Legendary → Mythical) with stage-tier badges on the leaderboard
 - Rust sim parity + RISC Zero guest
 - Relay-driven proof orchestration (worker + Boundless race)
 - Permissionless `settle_run` — relay or player can submit; either way the score lands in the player's slot
@@ -350,7 +502,7 @@ Env vars are listed in `zk_risk_0_stellar.md` §8.
 - Spectator replay viewer (re-runs the canonical sim from transcript)
 - Mobile (React Native / Capacitor wrap)
 
-### 9.1 Multi-game contract pattern
+### 10.1 Multi-game contract pattern
 
 Each new game implements the same three-method surface:
 
