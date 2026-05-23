@@ -137,7 +137,7 @@ Determinism guarantees in `core/fp.rs`:
 - **Raw byte I/O** to the zkVM — bypasses serde inside the guest (encoding lives in `encode_raw_run` at `core/src/fp.rs`).
 - **SHA-256 precompile** in RISC Zero zkVM cuts hashing from millions of cycles to thousands. Used once per run to hash the input transcript.
 
-Target proving cost: ≤ 5 minutes of run = 18,000 ticks → < 1 M zkVM cycles after sim optimization, similar order of magnitude to chickenz's 234K cycles/round.
+Target proving cost: ≤ 5 minutes of run = 18,000 ticks → < 1 M zkVM cycles after sim optimization. Hitting this budget depends on using the SHA-256 precompile for transcript hashing, zero-copy mutation in the hot path, and raw-byte stdin (no serde inside the guest).
 
 **If you port to a new sidescroller:** rewrite `packages/sim/` and `services/prover/core/` in lockstep, keep the same fixed-point convention, and write a parity test that runs random inputs through both implementations comparing every-tick state hashes.
 
@@ -210,7 +210,7 @@ Offset  Size  Field             Encoding
 
 Defined in `services/prover/core/src/types.rs` (`ProverOutput::to_journal_words` / `from_journal_bytes`). Decoders mirror this on-chain in `contracts/flight_scroll/src/lib.rs` (`decode_score`, `extract_seed`).
 
-Why include `seed` directly instead of a 32-byte commit? In flight_scroll the seed is contract-issued and known on-chain — no commit-reveal — so a 4-byte equality check is enough. This shaves 28 bytes off the journal vs. chickenz.
+Why include `seed` directly instead of a 32-byte commit? In flight runner the seed is contract-issued and known on-chain — no commit-reveal — so a 4-byte equality check is enough. This saves 28 bytes compared to a SHA-256(seed) commit approach.
 
 ### 4.5 Seal (proof bytes → on-chain)
 
