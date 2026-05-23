@@ -64,8 +64,10 @@ Responsibilities:
 - **Rendering only** — gameplay positions come from the canonical TS sim, not from Phaser physics.
 - Input capture: spacebar / tap / click = flap. One bit per tick (60 Hz).
 - Recording the transcript (one `u8` per simulated tick) into a `Uint8Array`.
-- Wallet integration via Stellar Wallets Kit for signing `start_run` and (optionally) `settle_run`.
-- Talking to the score relay via REST.
+- Wallet integration via Stellar Wallets Kit. The wallet signs:
+  - `start_run` (mandatory — proves the player owns the address that will appear on the leaderboard)
+  - `settle_run` (optional — the relay can also submit this since the function is permissionless and the proof self-binds to the player address pinned at start)
+- Talking to the score relay via REST for proof orchestration. The relay never sees or holds a Stellar key for the player.
 
 Scene boundaries:
 | Scene | Responsibility |
@@ -116,12 +118,14 @@ Determinism contract → see `zk_risk_0_stellar.md` §3.
 
 Stack: Bun + TypeScript + SQLite.
 
+**Trust posture:** the relay holds **no key that can mint runs or fake scores on behalf of a player**. Its Stellar account only pays gas to submit the permissionless `settle_run` tx. Compromising the relay lets an attacker waste its XLM balance and stall settlements; it does not let them write fraudulent scores. Players sign `start_run` directly in their wallet.
+
 Responsibilities:
 - Mirror on-chain run state to a local DB for UX (so a player closing the tab during proving sees status when they return).
-- Optional convenience proxy for `start_run` (server signs and submits, then returns the seed to the client).
+- Accept transcripts via `POST /api/runs/:id/submit` after the player finishes a run.
 - Proof orchestration: `prover.ts` races worker + Boundless paths and settles when the first proof arrives.
 - Worker HTTP API: `/api/worker/poll`, `/api/worker/input/:id`, `/api/worker/result/:id`, bearer-token auth via `WORKER_API_KEY`.
-- Auto-settle on proof completion: prepend Groth16 selector to the raw seal, call `settle_run` on-chain, persist tx hash.
+- Auto-settle on proof completion: prepend Groth16 selector to the raw seal, call `settle_run` on-chain (relay's own account pays gas), persist tx hash.
 - Re-prove admin endpoint for re-runs after a guest update.
 
 SQLite schema (sketch):
@@ -180,22 +184,24 @@ Full settle path → see `zk_risk_0_stellar.md` §6.
 
 ## 3. Data flow — one run, end to end
 
-1. **Player connects wallet** in `WalletScene`. Pubkey stored in localStorage.
-2. **Player presses "Start Run"**. Client calls relay `POST /api/run/start` with `{ player_pubkey }`.
-3. **Relay submits `start_run(player)`** to `flight_scroll` (admin-signed for v1 simplicity; player-signed in v2). Reads the `started` event for the seed. Persists `run_id`, `seed`, status=`pending` in SQLite. Returns `{ run_id, seed }` to client.
+1. **Player connects wallet** in `WalletScene` via Stellar Wallets Kit. Pubkey stored in localStorage. This is the sign-in moment — no separate account is created; the Stellar address *is* the identity.
+2. **Player presses "Start Run"**. The client builds a `start_run(player)` Soroban tx, the wallet pops up, the player signs.
+3. **Client submits the tx directly to Soroban RPC**, waits for confirmation, parses the `started` event to extract `run_id` and `seed`. Then `POST /api/runs` to the relay with `{ run_id, player_pubkey, seed }` so it can mirror state for later proof routing.
 4. **Client enters `PlayScene`**. Initializes the canonical sim with the seed. Phaser ticks at 60 Hz; on each tick:
    - Read input → `PlayerInput { buttons: flap_bit }`
    - `step_mut(state, input)`
    - Render sprites from `state` (positions, score, fuel)
    - Append `buttons` to the transcript buffer
 5. **Game over** fires (collision / fuel out / quit). `PlayScene` transitions to `GameOverScene`.
-6. **Player presses "Submit Score"**. Client posts the full transcript to `POST /api/run/submit` with `{ run_id, seed, inputs }`.
+6. **Player presses "Submit Score"**. Client posts the full transcript to `POST /api/runs/:id/submit` with `{ inputs }`. (No wallet popup here — submitting a transcript for proving is not a chain action.)
 7. **Relay validates** the transcript shape, marks `proving`, kicks off `proveScore(run_id, transcript, ...)`. Two paths race:
    - **Worker path**: queues the job; a worker polls `/api/worker/poll`, downloads the transcript via `/api/worker/input/:id`, runs `flight-host` locally on a beefy GPU/CPU, posts back to `/api/worker/result/:id`.
    - **Boundless path**: relay spawns `flight-host --boundless`, which uploads the ELF + stdin to Pinata, submits a request to the Boundless market, polls until fulfillment.
 8. **First proof to land wins**. Both produce `{ seal, journal, image_id }`. If both finish, relay diffs the journals and logs `Journal MISMATCH` on divergence.
-9. **Relay auto-settles**: prepends the 4-byte Groth16 selector if the seal is raw 256 bytes, calls `settle_run(run_id, seal, journal)`. On success, persists tx hash and sets status=`settled`.
-10. **Client polls** `GET /api/run/:run_id` for status. On `settled`, transition to `LeaderboardScene`, which reads `flight_scroll.get_top()` directly via RPC.
+9. **Settlement** — two routes, identical outcome since `settle_run` is permissionless:
+   - **Default**: relay auto-settles. Prepends the 4-byte Groth16 selector if the seal is raw 256 bytes, calls `settle_run(run_id, seal, journal)` from its own Stellar account, persists tx hash.
+   - **Player-driven**: if the player kept the tab open, client polls `GET /api/runs/:id/proof`, fetches the seal+journal, signs and submits `settle_run` from their own wallet. Useful when the player wants to pay their own gas or when the relay is offline.
+10. **Client polls** `GET /api/runs/:id` for status. On `settled`, transition to `LeaderboardScene`, which reads `flight_scroll.get_top()` directly via RPC.
 
 ---
 
@@ -309,33 +315,60 @@ Env vars are listed in `zk_risk_0_stellar.md` §8.
 | Threat | Mitigation |
 |---|---|
 | Player fabricates a high score by posting JSON | Contract requires Groth16 proof; only valid replays of the contract-issued seed verify |
-| Player picks a "lucky" seed by re-rolling | Seed is contract-issued from ledger entropy at `start_run` time; one active run per player |
-| Player runs an offline brute-force search for inputs | Real but bounded by proof cost (minutes of CPU per attempt); rate-limit `start_run` per account, cap leaderboard inserts |
-| Server submits a fabricated score | Server can only submit a proof that verifies against the player's contract-issued seed; cannot manufacture a winning transcript for an arbitrary seed any faster than the player can |
-| Old client/guest replays after a sim update | Bump `protocol_version`, rebuild guest → new `image_id` → admin updates `set_image_id` → old seals stop verifying |
+| Player picks a "lucky" seed by re-rolling | Seed is contract-issued from ledger entropy at `start_run` time. Player pays gas per `start_run`, capping rerolls economically. One active run per player blocks parallel rerolls. |
+| Player runs an offline brute-force search for inputs | Real but bounded by proof cost (minutes of CPU per attempt) and `start_run` gas. Per-account rate limiting in the contract (e.g., max N active+settled runs per ledger day) is a v1.1 add. |
+| Relay submits a fabricated score | Impossible. The relay can only submit a proof that verifies against the on-chain seed for that `run_id`, and the score lands in `RunData.player`'s slot regardless of who submits. The relay cannot manufacture a winning transcript faster than the player could. |
+| Relay impersonates a player to occupy their leaderboard slot | Impossible. Only the player's wallet can sign `start_run`, which is what writes their address into `RunData`. The relay never sees the player's secret. |
+| Old client/guest replays after a sim update | Bump `protocol_version`, rebuild guest → new `image_id` → admin updates `set_image_id` → old seals stop verifying. Existing in-flight runs settled within the rotation window may fail; relay surfaces this as `ImageIdMismatch`. |
 | Replay of an old proof against a new run | `seed` field in journal must equal `Run.seed`; each run is single-settle (`RunAlreadySettled`) |
-| Admin compromise | Admin can rotate verifier / image_id / itself. v2: timelock admin actions via governance contract |
+| Admin compromise | Admin can only rotate `verifier` / `image_id` / itself. Cannot mint runs or write scores (those paths have no admin override). v2: timelock admin actions via a small governance contract. |
 
 ---
 
 ## 9. Roadmap
 
-**v1 (MVP)**
+**v1 (MVP) — flight_scroll alone**
+- Stellar Wallets Kit sign-in; player wallet signs `start_run` directly
 - Single-player Phaser game with canonical TS sim
 - Rust sim parity + RISC Zero guest
 - Relay-driven proof orchestration (worker + Boundless race)
+- Permissionless `settle_run` — relay or player can submit; either way the score lands in the player's slot
 - `flight_scroll` contract with embedded top-100 leaderboard
-- Admin-proxied `start_run`
+- Optional player-side settle from the browser (relay still default for "close tab and walk away" UX)
 
-**v2**
-- Player-signed `start_run` (no relay needed for start)
-- Player-signed `settle_run` from the browser using Wallets Kit
-- Cross-game leaderboard contract (separate from `flight_scroll`)
-- Daily seed challenge (everyone plays the same seed on a UTC day)
+**v2 — multi-game**
+- Second game ships its own contract using the `flight_scroll` template (own sim, own guest, own `image_id`, own leaderboard)
+- `game_hub` registry contract: enumerates registered games, fans out aggregated queries (top-N globally, per-player profile across all games)
+- Shared frontend shell: one Wallet Kit connection, game-picker scene, hub-driven leaderboards
+- Daily seed challenge (contract issues a UTC-day shared seed; everyone races the same world)
 - Cosmetic NFTs gated by leaderboard rank
 - WebGPU prover (if RISC Zero ships a browser-side prover at usable speed)
 
-**v3**
-- Daily / weekly tournaments with prize pools (USDC SAC)
+**v3 — economy**
+- Daily / weekly tournaments with prize pools in USDC SAC
+- Entry fees and prize disbursement via the game hub
 - Spectator replay viewer (re-runs the canonical sim from transcript)
 - Mobile (React Native / Capacitor wrap)
+
+### 9.1 Multi-game contract pattern
+
+Each new game implements the same three-method surface:
+
+```rust
+fn start_run(env: Env, player: Address) -> u64;            // player.require_auth()
+fn settle_run(env: Env, run_id: u64, seal: Bytes, journal: Bytes);  // permissionless
+fn get_top(env: Env) -> Vec<TopEntry>;
+```
+
+Plus admin-only `initialize`, `set_image_id`, `set_verifier`, `rotate_admin`. The journal layout, `MatchConfig`, and `step()` function are all game-specific; the contract scaffold around them is reusable.
+
+The hub (when it exists) holds a `Vec<GameEntry { game_id, contract: Address, name: Symbol }>` and exposes:
+
+```rust
+fn register_game(env: Env, contract: Address, name: Symbol);  // admin
+fn list_games(env: Env) -> Vec<GameEntry>;
+fn global_top(env: Env, n: u32) -> Vec<(GameEntry, Vec<TopEntry>)>;
+fn player_profile(env: Env, player: Address) -> Vec<(GameEntry, Option<TopEntry>)>;
+```
+
+The hub does **not** own scores — it queries the per-game contracts. This keeps each game upgradeable on its own cadence and avoids a single trust-bottleneck contract.

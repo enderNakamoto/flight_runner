@@ -44,49 +44,61 @@ What it does **not** guarantee (callouts a porter needs to know):
 ## 2. End-to-end flow
 
 ```
-                  ┌────────────┐
-                  │ Soroban    │  start_run(player, run_id)
-                  │  flight_   │  ─ contract picks seed from ledger entropy
-                  │  scroll    │  ─ stores seed_commit + player + ttl
-                  └─────┬──────┘
-                        │  seed (returned via event)
-                        ▼
-              ┌─────────────────────┐
-              │ Client (Phaser/TS)  │  Runs canonical sim @ 60Hz
-              │  + WASM(core)       │  Records flap-per-tick transcript
-              └─────────┬───────────┘
-                        │  game over → transcript + seed
-                        ▼
-                ┌───────────────┐
-                │ Score Relay   │  Optional. Just a JSON gateway.
-                │  (Bun server) │  Forwards job to prover queue.
-                └──────┬────────┘
-                       │
-                       ▼
-                ┌─────────────┐
-                │ proveScore  │   Races worker + Boundless
-                └──────┬──────┘
-                       │
-            ┌──────────┴──────────┐
-            ▼                     ▼
-   ┌────────────────┐   ┌─────────────────────┐
-   │ Local/remote   │   │ Boundless market    │
-   │ flight-host    │   │ (Base Sepolia)      │
-   └──────┬─────────┘   └──────┬──────────────┘
-          │   seal + journal   │
-          └───────────┬────────┘
-                      ▼
-        ┌──────────────────────────────┐
-        │ settle_run (Soroban)         │
-        │  - SHA-256(journal)          │
-        │  - verifier.verify(seal,     │
-        │     image_id, digest)        │
-        │  - check seed == stored seed │
-        │  - leaderboard.submit(...)   │
-        └──────────────────────────────┘
+   ┌──────────────────────┐
+   │ Client (Phaser/TS)   │  ─ User connects wallet (Freighter / Albedo / …)
+   │  + Stellar Wallets   │  ─ User signs start_run(self) tx in their wallet
+   │    Kit               │  ─ Submits tx directly to Soroban RPC
+   └──────────┬───────────┘
+              │  start_run tx
+              ▼
+        ┌────────────┐
+        │ Soroban    │  start_run(player) — player.require_auth()
+        │  flight_   │  ─ Contract picks seed from ledger entropy
+        │  scroll    │  ─ Stores RunData{player, seed, settled:false}
+        └─────┬──────┘
+              │  seed (emitted in "started" event)
+              ▼
+   ┌──────────────────────┐
+   │ Client (Phaser/TS)   │  ─ Runs canonical sim @ 60Hz with that seed
+   │  + WASM(core)        │  ─ Records flap-per-tick transcript
+   └──────────┬───────────┘
+              │  game over → POST transcript + seed
+              ▼
+       ┌───────────────┐
+       │ Score Relay   │  Stateless proof orchestrator.
+       │  (Bun server) │  Holds NO Stellar admin key.
+       └──────┬────────┘
+              │
+              ▼
+       ┌─────────────┐
+       │ proveScore  │   Races worker + Boundless
+       └──────┬──────┘
+              │
+    ┌─────────┴────────────┐
+    ▼                      ▼
+┌────────────────┐   ┌─────────────────────┐
+│ Local/remote   │   │ Boundless market    │
+│ flight-host    │   │ (Base Sepolia)      │
+└──────┬─────────┘   └──────┬──────────────┘
+       │   seal + journal   │
+       └──────────┬─────────┘
+                  ▼
+   ┌──────────────────────────────┐
+   │ settle_run (Soroban)         │  permissionless — anyone can call
+   │  - SHA-256(journal)          │  (proof self-binds via seed equality)
+   │  - verifier.verify(seal,     │  Submitter (relay or player)
+   │     image_id, digest)        │  pays the gas; score lands in
+   │  - check seed == stored seed │  RunData.player's leaderboard slot.
+   │  - leaderboard.submit(...)   │
+   └──────────────────────────────┘
 ```
 
-The "Score Relay" server is optional. A client with a Boundless account can settle entirely peer-to-peer; the relay just makes the UX nicer (player closes laptop, comes back, proof is done).
+**Two trust-minimization properties of this flow:**
+
+1. **No admin key holds the player's runs.** The player signs `start_run` in their own wallet. The relay never has a Stellar secret that could mint runs for arbitrary addresses.
+2. **`settle_run` is permissionless.** The proof's journal binds the run via `seed` equality, and the player address was already pinned in `RunData` at `start_run`. So *anyone* — the relay, a friend, a public submitter bot — can submit the settle tx, and the score still lands in the original player's leaderboard slot. This is what makes async completion safe: the player can close their tab and the relay finishes the loop without holding any auth that could be abused.
+
+The relay is optional. A client willing to keep the tab open through proof generation (or run their own Boundless account) can settle entirely peer-to-peer.
 
 ---
 
@@ -346,11 +358,13 @@ When a result arrives, the relay compares journals if both paths returned, logs 
 
 ### 6.1 Contracts (Stellar Testnet)
 
-| Contract | Purpose |
-|---|---|
-| `flight_scroll` (this repo) | Issues seeds, accepts proofs, writes to leaderboard. Address pinned in env `FLIGHT_SCROLL_CONTRACT`. |
-| `groth16_verifier` | Nethermind `stellar-risc0-verifier`. Uses Soroban Protocol 25 native BN254 pairing. Address pinned in env `VERIFIER_CONTRACT`. |
-| `leaderboard` | Top-N persistent scoreboard. May be inlined into `flight_scroll` for v1; split out once cross-game leaderboards are needed. |
+| Contract | Purpose | Shared across games? |
+|---|---|---|
+| `flight_scroll` (this repo) | Issues seeds, accepts proofs, writes to leaderboard. Address pinned in env `FLIGHT_SCROLL_CONTRACT`. | No — game-specific. Each future game ships its own contract derived from this template, with its own `image_id`, scoring rules, and leaderboard. |
+| `groth16_verifier` | Nethermind `stellar-risc0-verifier`. Uses Soroban Protocol 25 native BN254 pairing. Address pinned in env `VERIFIER_CONTRACT`. | Yes — one verifier serves every RISC Zero-backed game on the network. |
+| `game_hub` (future) | Registry of game contracts + cross-game aggregation. When a per-game contract finishes `settle_run`, it pings the hub so leaderboards across multiple games can be queried in one call. | Yes — one per chain. |
+
+Per-game leaderboard lives **inside** the per-game contract (v1). A shared hub aggregates them later (v2 — see §9 roadmap). This keeps each game's contract self-contained and independently upgradeable; the hub is purely additive.
 
 ### 6.2 `start_run` — seed issuance
 
@@ -386,9 +400,11 @@ pub fn start_run(env: Env, player: Address) -> u64 /* run_id */ {
 }
 ```
 
-Caller (client or relay) reads the `started` event to learn the seed, then runs the sim with it.
+**Who calls this in v1:** the player's client. The user clicks "Start Run" in the browser, Stellar Wallets Kit pops up the wallet (Freighter / Albedo / xBull / etc.), the user signs, the client submits the tx to Soroban RPC directly. The client then reads the `started` event from the tx result to learn the seed. The relay is not in the loop at all for `start_run`.
 
 ### 6.3 `settle_run` — the verification path
+
+**No `require_auth()` on this function.** Any account can submit a proof for any `run_id` — the proof itself binds the run via seed equality, and the `RunData.player` was pinned at `start_run` time. The submitter pays the gas; the score lands in the original player's leaderboard slot. This is what lets the relay finish the loop async without holding any key that could mint runs or fake results.
 
 Full source at `contracts/flight_scroll/src/lib.rs`. Sequence:
 
@@ -479,6 +495,8 @@ Reads are a single `get_top()` view that returns the whole `Vec`.
 
 ### 6.5 Relay-side settlement
 
+The relay submits `settle_run` as itself (with its own Stellar account paying the fee). It is **not** signing on behalf of the player — `settle_run` has no `require_auth()` for the player, so the relay's submission is a normal third-party tx. The relay's account needs nothing more than XLM for gas.
+
 `services/server/src/stellar.ts` is the entire client for `settle_run`:
 
 ```ts
@@ -495,7 +513,7 @@ export async function settleRunOnChain(
 
 `autoSettleRun` in `services/server/src/index.ts` is the orchestrator — it prepends the Groth16 selector to a 256-byte raw seal if needed, calls `settleRunOnChain`, and on success writes `proof_status = "settled"` + the tx hash to the DB.
 
-A client-driven path also exists: `POST /api/runs/<id>/settle` accepts a tx hash from a client that submitted `settle_run` itself, then `verifySettleTxOnChain` parses the envelope to confirm the tx invoked our contract with the right run id.
+A fully client-driven path also exists: if the player keeps the tab open through proof generation, the client can submit `settle_run` from its own wallet (the relay returns the seal+journal blobs via `GET /api/runs/<id>/proof` and the client signs). Functionally identical to the relay path; just shifts gas payment to the player.
 
 ---
 
