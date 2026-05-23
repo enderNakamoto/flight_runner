@@ -1,14 +1,14 @@
 # Progress
 
-**Current phase:** Phase 0 — Initialize (not started)
+**Current phase:** Phase 2 — Full gameplay (not started)
 
 For what each phase is, see [`spec/phases.md`](spec/phases.md).
 For commit-level history, see `git log`.
 
 | Phase | Status |
 |---|---|
-| 0 — Initialize | not started |
-| 1 — Playable MVP | not started |
+| 0 — Initialize | in progress (frontend slice only — Rust/Soroban scaffolding deferred to phases 3+) |
+| 1 — Playable MVP | done |
 | 2 — Full gameplay | not started |
 | 3 — Deterministic sim + Rust port | not started |
 | 4 — RISC Zero prover (local) | not started |

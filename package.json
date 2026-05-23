@@ -1,0 +1,14 @@
+{
+  "name": "flight_scroll",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @flight/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "~5.5.4"
+  },
+  "packageManager": "pnpm@9.7.0"
+}

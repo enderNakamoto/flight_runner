@@ -6,7 +6,7 @@ Companion to [`zk_risk_0_stellar.md`](./zk_risk_0_stellar.md). That doc covers t
 
 ## 1. Product summary
 
-**flight_scroll** is a single-player Flappy Bird-style sidescroller. The player flies a passenger jet (`public/assets/plane.png`) through cloud pillars, enemy birds, drones, jets, UFOs, and missiles, picking up fuel tokens for score. The world scrolls horizontally; the plane scrolls in place. Game ends on collision, fuel-out, or voluntary quit.
+**flight_scroll** is a single-player horizontal sidescroller. The player flies a passenger jet (`public/assets/plane.png`) through cloud pillars, enemy birds, drones, jets, UFOs, and missiles, picking up fuel tokens to extend the run. The world scrolls horizontally; the plane scrolls in place. Steering is direct (↑/↓ moves the plane vertically — no Flappy-style gravity); fuel decay is what eventually forces the plane down. Game ends on collision, fuel-out, leaving the world, or voluntary quit.
 
 The run escalates through **five named difficulty stages** (Common → Uncommon → Rare → Legendary → Mythical), each unlocking new threats and tightening existing ones. The last two stages are designed to be hard to beat — Legendary gates skilled play, Mythical gates the leaderboard.
 
@@ -66,7 +66,7 @@ Responsibilities:
 - Asset loading from `public/assets/` (see `assets.json` for the canonical index).
 - Phaser scene graph: `Boot → Preload → Menu → Wallet → Play → GameOver → Leaderboard`.
 - **Rendering only** — gameplay positions come from the canonical TS sim, not from Phaser physics.
-- Input capture: spacebar / tap / click = flap. One bit per tick (60 Hz).
+- Input capture: ↑/W = thrust up, ↓/S = thrust down. Two bits per tick (60 Hz); both may be set, in which case they cancel (vy = 0).
 - Recording the transcript (one `u8` per simulated tick) into a `Uint8Array`.
 - Wallet integration via Stellar Wallets Kit. The wallet signs:
   - `start_run` (mandatory — proves the player owns the address that will appear on the leaderboard)
@@ -93,7 +93,7 @@ Modules:
 - `prng.ts` — deterministic splittable RNG, seeded from `u32`
 - `state.ts` — `GameState` type + `create_initial_state(seed)`
 - `step.ts` — `step(state, input) → newState`, the per-tick reducer
-- `physics.ts` — plane gravity, flap impulse, world-bounds collision
+- `physics.ts` — plane vertical steering, fuel-driven descent, world-bounds collision
 - `stages.ts` — `STAGE_TABLE` constant + `maybe_advance_stage()` (see §4)
 - `obstacles.ts` — pillar / enemy / missile spawn tables, advance, collision (spawn weights driven by `STAGE_TABLE[state.stage]`)
 - `pickups.ts` — fuel token spawn, collection, fuel drain (cadence driven by current stage)
@@ -193,7 +193,7 @@ Full settle path → see `zk_risk_0_stellar.md` §6.
 2. **Player presses "Start Run"**. The client builds a `start_run(player)` Soroban tx, the wallet pops up, the player signs.
 3. **Client submits the tx directly to Soroban RPC**, waits for confirmation, parses the `started` event to extract `run_id` and `seed`. Then `POST /api/runs` to the relay with `{ run_id, player_pubkey, seed }` so it can mirror state for later proof routing.
 4. **Client enters `PlayScene`**. Initializes the canonical sim with the seed. Phaser ticks at 60 Hz; on each tick:
-   - Read input → `PlayerInput { buttons: flap_bit }`
+   - Read input → `PlayerInput { buttons: up_bit | down_bit }`
    - `step_mut(state, input)`
    - Render sprites from `state` (positions, score, fuel)
    - Append `buttons` to the transcript buffer
@@ -367,7 +367,7 @@ The proof is only meaningful if the sim is bit-identical across TS and Rust. The
 | Time-based RNG | Seed comes from the contract; no `Math.random()` / `rand::thread_rng()`. |
 | Floating-point trig | Precomputed Q24.8 sine table for enemy wobble. |
 | Tick rate drift | Sim is `tickFn(state, input)`-driven, not `dt`-driven. Phaser invokes it on a fixed 60 Hz schedule via `setInterval`, not the render loop. |
-| Reserved input bits | Guest asserts bits 1..7 of `buttons` are zero. |
+| Reserved input bits | Guest asserts bits 2..7 of `buttons` are zero (only BTN_UP=bit0 and BTN_DOWN=bit1 are valid). |
 
 Parity test (`pnpm test:parity`) runs a corpus of recorded transcripts through both TS and Rust sims, comparing per-tick state hashes. **Run this on every sim PR.**
 

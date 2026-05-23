@@ -16,9 +16,9 @@ Set up the empty skeleton: pnpm workspace, cargo workspace, soroban contract sca
 
 ## Phase 1 — Playable MVP (no ZK, no chain, no wallet)
 
-Phaser client + TypeScript sim. One stage (Common). Pillars only. Keyboard input (space = flap). Score counter. Game over on collision. No fuel, no enemies, no wallet, no contract, no proof.
+Phaser client + TypeScript sim. One stage (Common). Pillars only. Keyboard input (↑/↓ = steer; held keys, not edge-triggered). No gravity yet — the plane holds altitude until the player steers; fuel drain (Phase 2) is what eventually forces descent. Score counter. Game over on collision or leaving the world. No fuel, no enemies, no wallet, no contract, no proof.
 
-**Done when:** `pnpm dev` opens the game in a browser, I can fly the plane, dodge pillars, see a score, and die when I crash.
+**Done when:** `pnpm dev` opens the game in a browser, I can steer the plane through pillars with ↑/↓, see a score, and die when I crash.
 
 ---
 

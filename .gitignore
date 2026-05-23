@@ -30,3 +30,6 @@ Cargo.lock.bak
 # Build artifacts
 proof_artifacts.json
 *.wasm.gz
+
+# playwright smoke test artifacts
+apps/web/tests/screenshots/
