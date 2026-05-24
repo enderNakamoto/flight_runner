@@ -212,21 +212,24 @@ Full settle path → see `zk_risk_0_stellar.md` §6.
 
 ## 4. Stage system
 
-The game escalates through **five named difficulty stages**. Each stage is a row in a constant lookup table consumed by the sim every tick; transitioning between stages is a pure function of `state.score`. Backgrounds, spawn weights, gap sizes, scroll speed, fuel cadence, and which enemy types can spawn are all per-stage. **Stages do not change the journal** — final stage is derivable from final score, so the leaderboard UI computes a tier badge client-side.
+The game escalates through **five named difficulty stages** structured as a curriculum — one new system added per stage. Each stage is a row in a constant lookup table consumed by the sim every tick; transitioning between stages is a pure function of `state.score`. Backgrounds, spawn weights, gap sizes, scroll speed, fuel cadence, pillar presence, and which enemy types can spawn are all per-stage. **Stages do not change the journal** — final stage is derivable from final score, so the leaderboard UI computes a tier badge client-side.
+
+Stages 1–2 are **open-sky** (no pillars, no fuel pressure on stage 1) — they teach the player to steer and dodge incoming threats. Stage 3 is the **transition**: pillars, drones, missiles, and fuel scarcity all become real, while leftover birds taper out across the stage. Stages 4 and 5 each add exactly one new enemy type on top of the stage-3 baseline.
 
 ### 4.1 The five stages
 
-| # | Name | Background mood | Score gate | New mechanics | Tightened from previous |
-|---|---|---|---|---|---|
-| 1 | **Common** | `blue_sky`, `blue_sky_mountain` (day_clear) | 0 | Pillars only | Tutorial baseline |
-| 2 | **Uncommon** | `sunset` (evening) | 50 | Enemy birds enter (`bird_big`, `bird_small`) | Pillar gap −20%, scroll +10% |
-| 3 | **Rare** | `dusk` | 150 | Drones (`drone`) + **common-tier missiles** (3 variants, fire trail) | Pillar gap −15%, scroll +5% |
-| 4 | **Legendary** | `night_clear`, `night_cloudy`, `night_cloudy_moon` (night_calm) | 350 | Jets (`jet`) enter — fast flybys + **uncommon-tier missiles** (ice_blue, plasma_green trails). Drone fire cadence ×2. | Pillar gap −15%, scroll +10%, fuel cadence −25% |
-| 5 | **Mythical** | `night_stormy` (storm) | 700 | UFO (`ufo`) spawns — rare zigzag boss + **rare-tier missiles** (nuclear, skull_poison, blue_stripe). Up to 3 missiles in flight. Lightning briefly dims visibility every ~8s. | Pillar gap −15%, scroll +10%, fuel pickups become scarce |
+| # | Name | Background mood | Score gate | Threats present | Fuel | Pillars | What's new vs previous |
+|---|---|---|---|---|---|---|---|
+| 1 | **Common** | `blue_sky`, `blue_sky_mountain` (day_clear) | 0 | `bird_small` only, single speed | – | – | Tutorial — learn steering, dodge incoming hawks |
+| 2 | **Uncommon** | `sunset` (evening) | 25 | `bird_small` (fast) + `bird_big` (slow, tankier) | enters | – | Bird variety + fuel pressure begins |
+| 3 | **Rare** | `dusk` | 75 | Drones + **common-tier missiles** + birds tapering out | yes | enters | Pillars enter; drones + missiles enter; birds linearly fade from 100% spawn weight at gate (75) to 0% by next gate (250) |
+| 4 | **Legendary** | `night_clear`, `night_cloudy`, `night_cloudy_moon` (night_calm) | 250 | Jets + drones + pillars + **common + uncommon-tier missiles** (ice_blue, plasma_green trails). Drone fire cadence ×2. | cadence −25% | yes | Jets enter (fast flybys); missile tier expands; no more birds |
+| 5 | **Mythical** | `night_stormy` (storm) | 600 | UFO + jets + drones + pillars + **all missile tiers** including rare (nuclear, skull_poison, blue_stripe). Up to 3 missiles in flight. Lightning briefly dims visibility every ~8s. | scarce | yes | UFO boss enters; rare missiles unlocked; visibility flicker |
 
-Three properties worth flagging:
+Four properties worth flagging:
 
-- **Stage names extend the missile tier ladder** already used in `assets.json` (`common / uncommon / rare`). Each new stage matches a missile tier, so enemy threats and stage name share vocabulary.
+- **Stage names extend the missile tier ladder** already used in `assets.json` (`common / uncommon / rare`). Stages 3/4/5 each match the highest missile tier they unlock; stages 1/2 borrow the same Common/Uncommon vocabulary purely as leaderboard tier badges (no missiles in those stages).
+- **One-new-system-per-stage curriculum.** Stage 1 = steering + birds. Stage 2 += fuel + bird-speed variety. Stage 3 += pillars + drones + missiles (the big transition; birds taper out). Stage 4 += jets. Stage 5 += UFOs + rare missiles.
 - **Backgrounds within a mood are cosmetic alternates.** Stage 1 picks between `blue_sky` and `blue_sky_mountain` at run start (seeded), Stage 4 picks among three night variants. The pick is deterministic from the seed so the prover replays the same visual, but rendering is decoupled from state — the sim doesn't care which background the client drew.
 - **The last two stages are designed to gate the leaderboard.** Reaching Legendary should be a target for skilled players; Mythical is hard-to-beat territory where leaderboard battles happen.
 
@@ -237,8 +240,8 @@ Three properties worth flagging:
 export const enum Stage { Common = 0, Uncommon, Rare, Legendary, Mythical }
 
 // enemy bitmask bits
-export const ENEMY_BIRD_BIG   = 1 << 0;
-export const ENEMY_BIRD_SMALL = 1 << 1;
+export const ENEMY_BIRD_SMALL = 1 << 0;
+export const ENEMY_BIRD_BIG   = 1 << 1;
 export const ENEMY_DRONE      = 1 << 2;
 export const ENEMY_JET        = 1 << 3;
 export const ENEMY_UFO        = 1 << 4;
@@ -250,12 +253,19 @@ export const MISSILE_RARE     = 1 << 2;
 
 export interface StageParams {
   scoreGate:           number;  // u32 — entry threshold (score >= gate)
-  pillarGap:           number;  // Q24.8 — vertical gap between top/bottom pillar
+  pillarsEnabled:      boolean; // false for stages 1–2 (open sky), true for 3–5
+  pillarGap:           number;  // Q24.8 — vertical gap between top/bottom pillar (ignored if !pillarsEnabled)
   scrollSpeed:         number;  // Q24.8 — world scroll per tick
-  fuelDrainPerTick:    number;  // Q24.8 — base drain rate
-  fuelSpawnPeriod:     number;  // u32 — ticks between fuel token spawns
+  fuelEnabled:         boolean; // false for stage 1 only; true from stage 2 onward
+  fuelDrainPerTick:    number;  // Q24.8 — base drain rate (ignored if !fuelEnabled)
+  fuelSpawnPeriod:     number;  // u32 — ticks between fuel token spawns (ignored if !fuelEnabled)
   enemySpawnPeriod:    number;  // u32 — ticks between enemy spawn rolls
-  enemyMask:           number;  // u8 — which enemy types can spawn this stage
+  enemyMask:           number;  // u8 — baseline enemy set (taper applied on top, see birdTaper)
+  birdTaper:           { startScore: number; endScore: number } | null;
+                                // stage-3 only: bird spawn weight ramps 1.0 → 0.0 across [startScore, endScore].
+                                // null elsewhere — enemyMask is authoritative.
+  birdSmallSpeed:      number;  // Q24.8 — px/tick. Stage 1 = baseline; stage 2 = faster (the "speed split")
+  birdBigSpeed:        number;  // Q24.8 — px/tick. Slower than small; only used when ENEMY_BIRD_BIG in enemyMask
   missileTierMask:     number;  // u8 — which missile tiers drones/jets fire
   missileMaxInFlight:  number;  // u8 — simultaneous missile cap
   visibilityFlicker:   boolean; // Mythical-only: lightning visibility dims
@@ -263,42 +273,76 @@ export interface StageParams {
 
 export const STAGE_TABLE: readonly StageParams[] = [
   /* Common    */ {
-    scoreGate: 0,   pillarGap: fp(0.35), scrollSpeed: fp(2.0),
-    fuelDrainPerTick: fp(0.04), fuelSpawnPeriod: 300,
-    enemySpawnPeriod: 0, enemyMask: 0, missileTierMask: 0, missileMaxInFlight: 0,
+    scoreGate: 0,
+    pillarsEnabled: false, pillarGap: 0, scrollSpeed: fp(2.0),
+    fuelEnabled: false, fuelDrainPerTick: 0, fuelSpawnPeriod: 0,
+    enemySpawnPeriod: 480,
+    enemyMask: ENEMY_BIRD_SMALL,
+    birdTaper: null,
+    birdSmallSpeed: fp(2.0), birdBigSpeed: 0,
+    missileTierMask: 0, missileMaxInFlight: 0,
     visibilityFlicker: false,
   },
   /* Uncommon  */ {
-    scoreGate: 50,  pillarGap: fp(0.28), scrollSpeed: fp(2.2),
-    fuelDrainPerTick: fp(0.05), fuelSpawnPeriod: 320,
-    enemySpawnPeriod: 600, enemyMask: ENEMY_BIRD_BIG | ENEMY_BIRD_SMALL,
-    missileTierMask: 0, missileMaxInFlight: 0, visibilityFlicker: false,
+    scoreGate: 25,
+    pillarsEnabled: false, pillarGap: 0, scrollSpeed: fp(2.1),
+    fuelEnabled: true, fuelDrainPerTick: fp(0.04), fuelSpawnPeriod: 320,
+    enemySpawnPeriod: 420,
+    enemyMask: ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG,
+    birdTaper: null,
+    birdSmallSpeed: fp(2.6),                       // small = fast
+    birdBigSpeed:   fp(1.4),                       // big   = slow
+    missileTierMask: 0, missileMaxInFlight: 0,
+    visibilityFlicker: false,
   },
   /* Rare      */ {
-    scoreGate: 150, pillarGap: fp(0.24), scrollSpeed: fp(2.3),
-    fuelDrainPerTick: fp(0.06), fuelSpawnPeriod: 340,
+    scoreGate: 75,
+    pillarsEnabled: true, pillarGap: fp(0.28), scrollSpeed: fp(2.3),
+    fuelEnabled: true, fuelDrainPerTick: fp(0.05), fuelSpawnPeriod: 340,
     enemySpawnPeriod: 500,
-    enemyMask: ENEMY_BIRD_BIG | ENEMY_BIRD_SMALL | ENEMY_DRONE,
+    enemyMask: ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG | ENEMY_DRONE,
+    birdTaper: { startScore: 75, endScore: 250 }, // birds fade out across the stage
+    birdSmallSpeed: fp(2.6), birdBigSpeed: fp(1.4),
     missileTierMask: MISSILE_COMMON, missileMaxInFlight: 1,
     visibilityFlicker: false,
   },
   /* Legendary */ {
-    scoreGate: 350, pillarGap: fp(0.20), scrollSpeed: fp(2.5),
-    fuelDrainPerTick: fp(0.07), fuelSpawnPeriod: 450,    // fuel cadence -25%
+    scoreGate: 250,
+    pillarsEnabled: true, pillarGap: fp(0.22), scrollSpeed: fp(2.5),
+    fuelEnabled: true, fuelDrainPerTick: fp(0.06), fuelSpawnPeriod: 450, // cadence −25%
     enemySpawnPeriod: 380,
-    enemyMask: ENEMY_BIRD_BIG | ENEMY_BIRD_SMALL | ENEMY_DRONE | ENEMY_JET,
+    enemyMask: ENEMY_DRONE | ENEMY_JET,           // birds gone
+    birdTaper: null,
+    birdSmallSpeed: 0, birdBigSpeed: 0,
     missileTierMask: MISSILE_COMMON | MISSILE_UNCOMMON, missileMaxInFlight: 2,
     visibilityFlicker: false,
   },
   /* Mythical  */ {
-    scoreGate: 700, pillarGap: fp(0.17), scrollSpeed: fp(2.7),
-    fuelDrainPerTick: fp(0.08), fuelSpawnPeriod: 700,    // fuel scarce
+    scoreGate: 600,
+    pillarsEnabled: true, pillarGap: fp(0.18), scrollSpeed: fp(2.7),
+    fuelEnabled: true, fuelDrainPerTick: fp(0.07), fuelSpawnPeriod: 700, // fuel scarce
     enemySpawnPeriod: 300,
-    enemyMask: ENEMY_BIRD_BIG | ENEMY_BIRD_SMALL | ENEMY_DRONE | ENEMY_JET | ENEMY_UFO,
+    enemyMask: ENEMY_DRONE | ENEMY_JET | ENEMY_UFO,
+    birdTaper: null,
+    birdSmallSpeed: 0, birdBigSpeed: 0,
     missileTierMask: MISSILE_COMMON | MISSILE_UNCOMMON | MISSILE_RARE,
-    missileMaxInFlight: 3, visibilityFlicker: true,
+    missileMaxInFlight: 3,
+    visibilityFlicker: true,
   },
 ];
+
+// Effective bird spawn weight given the current stage row and score.
+// Returns Q24.8 in [0, 1]. Only stage 3 (Rare) ever returns a non-{0,1} value.
+export function birdSpawnWeight(s: StageParams, score: number): number {
+  if (s.birdTaper === null) {
+    return (s.enemyMask & (ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG)) !== 0 ? FP_ONE : 0;
+  }
+  const { startScore, endScore } = s.birdTaper;
+  if (score <= startScore) return FP_ONE;
+  if (score >= endScore)   return 0;
+  // linear ramp; bit-identical between TS and Rust via fixed-point div
+  return fp_div(fp(endScore - score), fp(endScore - startScore));
+}
 
 export function stageForScore(score: number): Stage {
   for (let i = STAGE_TABLE.length - 1; i >= 0; i--) {

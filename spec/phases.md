@@ -16,7 +16,7 @@ Set up the empty skeleton: pnpm workspace, cargo workspace, soroban contract sca
 
 ## Phase 1 — Playable MVP (no ZK, no chain, no wallet)
 
-Phaser client + TypeScript sim. One stage (Common). Pillars only. Keyboard input (↑/↓ = steer; held keys, not edge-triggered). No gravity yet — the plane holds altitude until the player steers; fuel drain (Phase 2) is what eventually forces descent. Score counter. Game over on collision or leaving the world. No fuel, no enemies, no wallet, no contract, no proof.
+Phaser client + TypeScript sim. One **proto stage** — pillars only, as the simplest renderable obstacle. (Not part of the five-stage `STAGE_TABLE` progression in §4 — Stage 1/Common is birds-only and lands in Phase 2.) Keyboard input (↑/↓ = steer; held keys, not edge-triggered). No gravity yet — the plane holds altitude until the player steers; fuel drain (Phase 2) is what eventually forces descent. Score counter. Game over on collision or leaving the world. No fuel, no enemies, no wallet, no contract, no proof.
 
 **Done when:** `pnpm dev` opens the game in a browser, I can steer the plane through pillars with ↑/↓, see a score, and die when I crash.
 
