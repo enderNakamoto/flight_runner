@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test:smoke": "node tests/smoke.mjs",
-    "test:collision": "node tests/collision.mjs"
+    "test:collision": "node tests/collision.mjs",
+    "test:birds": "node tests/birds.mjs",
+    "test:hitbox": "node tests/hitbox_check.mjs",
+    "test:stages": "node tests/stages.mjs"
   },
   "dependencies": {
     "@flight/sim": "workspace:*",

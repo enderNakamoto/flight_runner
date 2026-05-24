@@ -1,6 +1,6 @@
 # Progress
 
-**Current phase:** Phase 2 — Full gameplay (not started)
+**Current phase:** Phase 3 — Deterministic sim + Rust port (not started)
 
 For what each phase is, see [`spec/phases.md`](spec/phases.md).
 For commit-level history, see `git log`.
@@ -9,7 +9,7 @@ For commit-level history, see `git log`.
 |---|---|
 | 0 — Initialize | in progress (frontend slice only — Rust/Soroban scaffolding deferred to phases 3+) |
 | 1 — Playable MVP | done |
-| 2 — Full gameplay | not started |
+| 2 — Full gameplay | done (SFX deferred to Phase 8 — no audio assets yet) |
 | 3 — Deterministic sim + Rust port | not started |
 | 4 — RISC Zero prover (local) | not started |
 | 5 — Soroban contract + wallet | not started |
@@ -25,4 +25,4 @@ For commit-level history, see `git log`.
 
 ## Notes
 
-_(none yet)_
+- Phase 2 SFX is parked until Phase 8 — no audio assets in `public/assets/`. The "basic SFX" item from the original Phase 2 scope (engine, score, hit, fuel pickup) lands with the polish/launch pass.

@@ -40,7 +40,8 @@ const page = await ctx.newPage();
 page.on("pageerror", (e) => fail("page error", e.message));
 
 // Navigate first so relative URLs resolve and the origin is set.
-await page.goto(`${BASE}/?test=1&debug=1`, { waitUntil: "load" });
+// Force-spawn at Stage 2 (Rare) so pillars exist to measure.
+await page.goto(`${BASE}/?test=1&debug=1&stage=2`, { waitUntil: "load" });
 
 // ---- Step 1+2: measure alpha bboxes of the source PNGs ----
 console.log("measuring source PNG alpha bboxes…");

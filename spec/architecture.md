@@ -221,10 +221,10 @@ Stages 1–2 are **open-sky** (no pillars, no fuel pressure on stage 1) — they
 | # | Name | Background mood | Score gate | Threats present | Fuel | Pillars | What's new vs previous |
 |---|---|---|---|---|---|---|---|
 | 1 | **Common** | `blue_sky`, `blue_sky_mountain` (day_clear) | 0 | `bird_small` only, single speed | – | – | Tutorial — learn steering, dodge incoming hawks |
-| 2 | **Uncommon** | `sunset` (evening) | 25 | `bird_small` (fast) + `bird_big` (slow, tankier) | enters | – | Bird variety + fuel pressure begins |
-| 3 | **Rare** | `dusk` | 75 | Drones + **common-tier missiles** + birds tapering out | yes | enters | Pillars enter; drones + missiles enter; birds linearly fade from 100% spawn weight at gate (75) to 0% by next gate (250) |
-| 4 | **Legendary** | `night_clear`, `night_cloudy`, `night_cloudy_moon` (night_calm) | 250 | Jets + drones + pillars + **common + uncommon-tier missiles** (ice_blue, plasma_green trails). Drone fire cadence ×2. | cadence −25% | yes | Jets enter (fast flybys); missile tier expands; no more birds |
-| 5 | **Mythical** | `night_stormy` (storm) | 600 | UFO + jets + drones + pillars + **all missile tiers** including rare (nuclear, skull_poison, blue_stripe). Up to 3 missiles in flight. Lightning briefly dims visibility every ~8s. | scarce | yes | UFO boss enters; rare missiles unlocked; visibility flicker |
+| 2 | **Uncommon** | `sunset` (evening) | 12 | `bird_small` (fast) + `bird_big` (slow, tankier) | enters | – | Bird variety + fuel pressure begins |
+| 3 | **Rare** | `dusk` | 37 | Drones + **common-tier missiles** + birds tapering out | yes | enters | Pillars enter; drones + missiles enter; birds linearly fade from 100% spawn weight at gate (37) to 0% by next gate (125) |
+| 4 | **Legendary** | `night_clear`, `night_cloudy`, `night_cloudy_moon` (night_calm) | 125 | Jets + drones + pillars + **common + uncommon-tier missiles** (ice_blue, plasma_green trails). Drone fire cadence ×2. | cadence −25% | yes | Jets enter (fast flybys); missile tier expands; no more birds |
+| 5 | **Mythical** | `night_stormy` (storm) | 300 | UFO + jets + drones + pillars + **all missile tiers** including rare (nuclear, skull_poison, blue_stripe). Up to 3 missiles in flight. Lightning briefly dims visibility every ~8s. | scarce | yes | UFO boss enters; rare missiles unlocked; visibility flicker |
 
 Four properties worth flagging:
 
@@ -284,7 +284,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
     visibilityFlicker: false,
   },
   /* Uncommon  */ {
-    scoreGate: 25,
+    scoreGate: 12,
     pillarsEnabled: false, pillarGap: 0, scrollSpeed: fp(2.1),
     fuelEnabled: true, fuelDrainPerTick: fp(0.04), fuelSpawnPeriod: 320,
     enemySpawnPeriod: 420,
@@ -296,18 +296,18 @@ export const STAGE_TABLE: readonly StageParams[] = [
     visibilityFlicker: false,
   },
   /* Rare      */ {
-    scoreGate: 75,
+    scoreGate: 37,
     pillarsEnabled: true, pillarGap: fp(0.28), scrollSpeed: fp(2.3),
     fuelEnabled: true, fuelDrainPerTick: fp(0.05), fuelSpawnPeriod: 340,
     enemySpawnPeriod: 500,
     enemyMask: ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG | ENEMY_DRONE,
-    birdTaper: { startScore: 75, endScore: 250 }, // birds fade out across the stage
+    birdTaper: { startScore: 37, endScore: 125 }, // birds fade out across the stage
     birdSmallSpeed: fp(2.6), birdBigSpeed: fp(1.4),
     missileTierMask: MISSILE_COMMON, missileMaxInFlight: 1,
     visibilityFlicker: false,
   },
   /* Legendary */ {
-    scoreGate: 250,
+    scoreGate: 125,
     pillarsEnabled: true, pillarGap: fp(0.22), scrollSpeed: fp(2.5),
     fuelEnabled: true, fuelDrainPerTick: fp(0.06), fuelSpawnPeriod: 450, // cadence −25%
     enemySpawnPeriod: 380,
@@ -318,7 +318,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
     visibilityFlicker: false,
   },
   /* Mythical  */ {
-    scoreGate: 600,
+    scoreGate: 300,
     pillarsEnabled: true, pillarGap: fp(0.18), scrollSpeed: fp(2.7),
     fuelEnabled: true, fuelDrainPerTick: fp(0.07), fuelSpawnPeriod: 700, // fuel scarce
     enemySpawnPeriod: 300,

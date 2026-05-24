@@ -19,7 +19,9 @@ const SHOTS_DIR = resolve(__dirname, "screenshots");
 mkdirSync(SHOTS_DIR, { recursive: true });
 
 const BASE = process.env.BASE_URL ?? "http://127.0.0.1:5173";
-const URL = `${BASE}/?test=1&debug=1`;
+// Force-spawn the run at Stage 2 (Rare) where pillarsEnabled = true.
+// Stages 0–1 (Common, Uncommon) are open-sky bird-only and have no pillars.
+const URL = `${BASE}/?test=1&debug=1&stage=2`;
 
 const ok = (label) => console.log(`  ✓ ${label}`);
 const fail = (label, details) => {
