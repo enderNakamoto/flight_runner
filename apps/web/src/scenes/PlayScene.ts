@@ -55,13 +55,15 @@ import {
   type GameState,
 } from "@flight/sim";
 import { backgroundFor } from "../backgrounds.js";
+import { INTERMISSION_DURATION_MS, INTERMISSIONS } from "../intermissions.js";
+import { OUTROS } from "../outros.js";
 
 interface PillarSprites {
   top: Phaser.GameObjects.Image;
   bottom: Phaser.GameObjects.Image;
 }
 
-type Phase = "ready" | "playing" | "gameOver";
+type Phase = "ready" | "playing" | "intermission" | "gameOver";
 
 const BEST_SCORE_KEY = "flight_scroll:best";
 
@@ -162,6 +164,14 @@ export class PlayScene extends Phaser.Scene {
   private debug = false;
   private debugGfx?: Phaser.GameObjects.Graphics;
 
+  // Intermission overlay (between stages)
+  private interBg!: Phaser.GameObjects.Rectangle;
+  private interTitle!: Phaser.GameObjects.Text;
+  private interBody!: Phaser.GameObjects.Text;
+  private interCountdown!: Phaser.GameObjects.Text;
+  private interHint!: Phaser.GameObjects.Text;
+  private interEndsAt = 0;
+
   constructor() { super("PlayScene"); }
 
   create(): void {
@@ -239,7 +249,10 @@ export class PlayScene extends Phaser.Scene {
     kb.on("keydown-S", () => this.onSteerPressed());
     kb.on("keydown-A", () => this.onSteerPressed());
     kb.on("keydown-D", () => this.onSteerPressed());
-    kb.on("keydown-SPACE", () => this.onSteerPressed());
+    kb.on("keydown-SPACE", () => {
+      if (this.phase === "intermission") this.exitIntermission();
+      else this.onSteerPressed();
+    });
     kb.on("keydown-R", () => this.maybeRestart());
 
     // Small speed indicator near the fuel bar — shows ◀ / ▶ when held.
@@ -252,6 +265,62 @@ export class PlayScene extends Phaser.Scene {
     if (this.debug) {
       this.debugGfx = this.add.graphics().setDepth(20);
     }
+
+    // Intermission overlay — dark screen + briefing text shown between stages.
+    // Sits above the flicker overlay (depth 15) and below the debug graphics
+    // (depth 20) so debug rectangles remain inspectable even during a wait.
+    this.interBg = this.add
+      .rectangle(0, 0, WORLD_WIDTH, WORLD_HEIGHT, 0x000000, 0.85)
+      .setOrigin(0, 0)
+      .setDepth(16)
+      .setVisible(false);
+    this.interTitle = this.add
+      .text(WORLD_WIDTH / 2, WORLD_HEIGHT / 2 - 120, "", {
+        fontFamily: "ui-monospace, Menlo, monospace",
+        fontSize: "44px",
+        color: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 6,
+        align: "center",
+      })
+      .setOrigin(0.5)
+      .setDepth(17)
+      .setVisible(false);
+    this.interBody = this.add
+      .text(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, "", {
+        fontFamily: "ui-monospace, Menlo, monospace",
+        fontSize: "22px",
+        color: "#e0e0e0",
+        stroke: "#000000",
+        strokeThickness: 4,
+        align: "center",
+      })
+      .setOrigin(0.5)
+      .setLineSpacing(8)
+      .setDepth(17)
+      .setVisible(false);
+    this.interCountdown = this.add
+      .text(WORLD_WIDTH / 2, WORLD_HEIGHT - 110, "", {
+        fontFamily: "ui-monospace, Menlo, monospace",
+        fontSize: "20px",
+        color: "#9be7ff",
+        stroke: "#000000",
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5)
+      .setDepth(17)
+      .setVisible(false);
+    this.interHint = this.add
+      .text(WORLD_WIDTH / 2, WORLD_HEIGHT - 70, "SPACE to continue", {
+        fontFamily: "ui-monospace, Menlo, monospace",
+        fontSize: "16px",
+        color: "#bbbbbb",
+        stroke: "#000000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5)
+      .setDepth(17)
+      .setVisible(false);
 
     if (testEnabled()) {
       window.__TEST__ = {
@@ -295,15 +364,81 @@ export class PlayScene extends Phaser.Scene {
       while (this.accumulator >= TICK_MS && safety-- > 0) {
         this.accumulator -= TICK_MS;
         stepMut(this.state, { buttons: this.readButtons() });
-        if (this.state.stageJustChanged) this.onStageChanged();
+        if (this.state.stageJustChanged) {
+          this.onStageChanged();
+          if (this.maybeEnterIntermission()) break;
+        }
         if (this.state.gameOver) {
           this.phase = "gameOver";
           this.commitBest();
+          this.showOutro();
           break;
         }
       }
+    } else if (this.phase === "intermission") {
+      this.updateIntermission();
     }
     this.render(delta);
+  }
+
+  // Returns true if the sim tick loop should pause (intermission active).
+  private maybeEnterIntermission(): boolean {
+    const copy = INTERMISSIONS[this.state.stage as Stage];
+    if (!copy) return false;
+    this.phase = "intermission";
+    this.interEndsAt = this.time.now + INTERMISSION_DURATION_MS;
+    this.interTitle.setText(copy.title).setVisible(true);
+    this.interBody.setText(copy.body.join("\n")).setVisible(true);
+    this.interCountdown.setVisible(true);
+    this.interHint.setVisible(true);
+    this.interBg.setVisible(true);
+    // Drop input that may have been queued so we don't immediately skip if
+    // SPACE was held during the transition.
+    this.accumulator = 0;
+    return true;
+  }
+
+  private updateIntermission(): void {
+    const remainingMs = Math.max(0, this.interEndsAt - this.time.now);
+    const remainingSec = Math.ceil(remainingMs / 1000);
+    this.interCountdown.setText(`RESUMING IN ${remainingSec}…`);
+    if (remainingMs <= 0) {
+      this.exitIntermission();
+    }
+  }
+
+  private exitIntermission(): void {
+    this.interBg.setVisible(false);
+    this.interTitle.setVisible(false);
+    this.interBody.setVisible(false);
+    this.interCountdown.setVisible(false);
+    this.interHint.setVisible(false);
+    this.phase = "playing";
+    this.accumulator = 0;
+  }
+
+  // Shows the game-over outro by reusing the intermission overlay widgets
+  // with diversion copy. Stays up until the player presses R.
+  private showOutro(): void {
+    const copy = OUTROS[this.state.gameOverReason] ?? OUTROS[0];
+    const isBest = this.state.score > 0 && this.state.score >= this.best;
+    this.interBg.setVisible(true);
+    this.interTitle.setText(copy.title).setVisible(true);
+    this.interBody.setText(copy.body.join("\n")).setVisible(true);
+    this.interCountdown
+      .setText(isBest ? `NEW BEST  ${this.state.score}` : `SCORE ${this.state.score}    BEST ${this.best}`)
+      .setColor(isBest ? "#ffd54f" : "#9be7ff")
+      .setVisible(true);
+    this.interHint.setText("R to restart").setVisible(true);
+  }
+
+  private hideOutro(): void {
+    this.interBg.setVisible(false);
+    this.interTitle.setVisible(false);
+    this.interBody.setVisible(false);
+    this.interCountdown.setVisible(false);
+    this.interCountdown.setColor("#9be7ff");
+    this.interHint.setVisible(false);
   }
 
   private readButtons(): number {
@@ -496,15 +631,9 @@ export class PlayScene extends Phaser.Scene {
       this.statusText.setColor("#ffffff");
       this.hintText.setText("↑ ↓ steer    ← → throttle");
     } else if (this.phase === "gameOver") {
-      const causedByFuel = stage.fuelEnabled && this.state.fuel <= 0;
-      const head = causedByFuel
-        ? `FUEL OUT\nSCORE ${this.state.score}`
-        : this.state.score > 0 && this.state.score >= this.best
-          ? `GAME OVER\nNEW BEST ${this.state.score}`
-          : `GAME OVER\nSCORE ${this.state.score}`;
-      this.statusText.setText(head);
-      this.statusText.setColor("#ff5252");
-      this.hintText.setText("R to restart");
+      // Outro overlay handles the message; suppress the in-world text.
+      this.statusText.setText("");
+      this.hintText.setText("");
     } else {
       this.statusText.setText("");
       this.hintText.setText("↑ ↓ steer    ← → throttle");
@@ -572,6 +701,7 @@ export class PlayScene extends Phaser.Scene {
 
   private maybeRestart(): void {
     if (this.phase !== "gameOver") return;
+    this.hideOutro();
     for (const sprites of this.pillarSprites.values()) { sprites.top.destroy(); sprites.bottom.destroy(); }
     this.pillarSprites.clear();
     for (const s of this.enemySprites.values()) s.destroy(); this.enemySprites.clear();

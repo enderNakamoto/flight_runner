@@ -31,6 +31,19 @@ export const enum EnemyKind {
   Ufo = 4,
 }
 
+export const enum GameOverReason {
+  Unknown = 0,
+  Bird = 1,
+  Drone = 2,
+  Jet = 3,
+  Ufo = 4,
+  Missile = 5,
+  Pillar = 6,
+  WorldTop = 7,
+  WorldBottom = 8,
+  FuelOut = 9,
+}
+
 export interface Enemy {
   id: number;
   kind: EnemyKind;
@@ -68,6 +81,7 @@ export interface GameState {
   tick: number;
   score: number;
   gameOver: boolean;
+  gameOverReason: GameOverReason;
   stage: number;            // index into STAGE_TABLE
   stageJustChanged: boolean; // transient per-tick render cue; not hashed
   fuel: number;             // 0..FUEL_MAX; ignored while stage.fuelEnabled === false

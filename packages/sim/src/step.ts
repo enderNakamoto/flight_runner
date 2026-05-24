@@ -72,11 +72,26 @@ import {
   BTN_RIGHT,
   BTN_UP,
   EnemyKind,
+  GameOverReason,
   MissileTier,
   type Enemy,
   type GameState,
   type PlayerInput,
 } from "./types.js";
+
+function reasonForEnemy(kind: EnemyKind): GameOverReason {
+  switch (kind) {
+    case EnemyKind.BirdSmall:
+    case EnemyKind.BirdBig:
+      return GameOverReason.Bird;
+    case EnemyKind.Drone:
+      return GameOverReason.Drone;
+    case EnemyKind.Jet:
+      return GameOverReason.Jet;
+    case EnemyKind.Ufo:
+      return GameOverReason.Ufo;
+  }
+}
 
 const SPEED_SLOW = 0.5;
 const SPEED_FAST = 3.0;
@@ -297,8 +312,14 @@ export function stepMut(state: GameState, input: PlayerInput): void {
   state.plane.vy = dy;
   state.plane.y += dy;
 
-  if (state.plane.y < 0 || state.plane.y > WORLD_HEIGHT) {
+  if (state.plane.y < 0) {
     state.gameOver = true;
+    state.gameOverReason = GameOverReason.WorldTop;
+    return;
+  }
+  if (state.plane.y > WORLD_HEIGHT) {
+    state.gameOver = true;
+    state.gameOverReason = GameOverReason.WorldBottom;
     return;
   }
 
@@ -310,6 +331,7 @@ export function stepMut(state: GameState, input: PlayerInput): void {
     if (state.fuel <= 0) {
       state.fuel = 0;
       state.gameOver = true;
+      state.gameOverReason = GameOverReason.FuelOut;
       return;
     }
   }
@@ -389,6 +411,7 @@ export function stepMut(state: GameState, input: PlayerInput): void {
       planeHits({ left: pillarLeft, right: pillarRight, top: hitGapBottom, bottom: WORLD_HEIGHT })
     ) {
       state.gameOver = true;
+      state.gameOverReason = GameOverReason.Pillar;
       return;
     }
   }
@@ -418,6 +441,7 @@ export function stepMut(state: GameState, input: PlayerInput): void {
     const eBottom = e.y + dims.hitboxH / 2;
     if (planeHits({ left: eLeft, right: eRight, top: eTop, bottom: eBottom })) {
       state.gameOver = true;
+      state.gameOverReason = reasonForEnemy(e.kind);
       return;
     }
   }
@@ -432,6 +456,7 @@ export function stepMut(state: GameState, input: PlayerInput): void {
     const mBottom = m.y + MISSILE_HITBOX_H / 2;
     if (planeHits({ left: mLeft, right: mRight, top: mTop, bottom: mBottom })) {
       state.gameOver = true;
+      state.gameOverReason = GameOverReason.Missile;
       return;
     }
   }

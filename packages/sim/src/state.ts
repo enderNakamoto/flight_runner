@@ -1,13 +1,14 @@
 import { FUEL_INITIAL, PLANE_START_Y } from "./constants.js";
 import { prngInit } from "./prng.js";
 import { Stage } from "./stages.js";
-import type { GameState } from "./types.js";
+import { GameOverReason, type GameState } from "./types.js";
 
 export function createInitialState(seed: number, startStage: Stage = Stage.Common): GameState {
   return {
     tick: 0,
     score: 0,
     gameOver: false,
+    gameOverReason: GameOverReason.Unknown,
     stage: startStage,
     stageJustChanged: false,
     fuel: FUEL_INITIAL,
