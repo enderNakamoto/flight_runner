@@ -48,14 +48,18 @@ export class BootScene extends Phaser.Scene {
 
   create(): void {
     // Several assets were saved with opaque light-grey backgrounds instead of
-    // true alpha=0 transparency. Strip the background colour by chroma-key at
-    // boot time so they composite cleanly over the sky.
-    this.stripBackground("fuel_token", { isSpriteSheet: false, tolerance: 15 });
-    this.stripBackground("drone",      { isSpriteSheet: false, tolerance: 15 });
-    this.stripBackground("jet",        { isSpriteSheet: false, tolerance: 15 });
-    // Missiles spritesheet has a white-bodied frame ("missile_white_red_fin");
-    // use a tight tolerance so we don't punch holes in the white missile.
-    this.stripBackground("missiles", { isSpriteSheet: true, tolerance: 5, frameWidth: 591, frameHeight: 222 });
+    // true alpha=0 transparency. Strip the background colour at boot time so
+    // they composite cleanly over the sky.
+    //
+    // Method: flood-fill from the texture edges. Pixels matching the corner
+    // colour AND connected to the edge get alpha=0. Pixels matching the
+    // colour but *enclosed* inside the sprite (e.g. a grey pixel surrounded by
+    // opaque missile trail) stay opaque — that's what prevented the checker-
+    // pattern artifact a tolerance-strip produced on the missiles sheet.
+    this.stripBackground("fuel_token", { isSpriteSheet: false, tolerance: 18 });
+    this.stripBackground("drone",      { isSpriteSheet: false, tolerance: 18 });
+    this.stripBackground("jet",        { isSpriteSheet: false, tolerance: 18 });
+    this.stripBackground("missiles",   { isSpriteSheet: true,  tolerance: 14, frameWidth: 591, frameHeight: 222 });
 
     // The bg PNGs aren't tileable horizontally (their left and right edges
     // don't match), so a scrolling tileSprite shows a vertical seam every time
@@ -92,23 +96,64 @@ export class BootScene extends Phaser.Scene {
     const bgG = px[1]!;
     const bgB = px[2]!;
     const tol = opts.tolerance;
-    for (let i = 0; i < px.length; i += 4) {
-      if (
-        Math.abs(px[i]! - bgR) <= tol &&
-        Math.abs(px[i + 1]! - bgG) <= tol &&
-        Math.abs(px[i + 2]! - bgB) <= tol
-      ) {
-        px[i + 3] = 0;
-      }
+
+    // Flood-fill from every edge pixel: only edge-connected bg pixels are made
+    // transparent. Iterative BFS using a flat Int32Array stack to keep GC and
+    // allocator pressure off — the spritesheet alone is ~1.5M pixels.
+    const matches = (idx: number): boolean =>
+      Math.abs(px[idx]! - bgR) <= tol &&
+      Math.abs(px[idx + 1]! - bgG) <= tol &&
+      Math.abs(px[idx + 2]! - bgB) <= tol;
+    const visited = new Uint8Array(W * H);
+    const stack: number[] = [];
+    const seed = (x: number, y: number): void => {
+      if (x < 0 || x >= W || y < 0 || y >= H) return;
+      const flat = y * W + x;
+      if (visited[flat]) return;
+      if (!matches(flat * 4)) return;
+      visited[flat] = 1;
+      stack.push(flat);
+    };
+    for (let x = 0; x < W; x++) {
+      seed(x, 0);
+      seed(x, H - 1);
     }
+    for (let y = 0; y < H; y++) {
+      seed(0, y);
+      seed(W - 1, y);
+    }
+    while (stack.length > 0) {
+      const flat = stack.pop()!;
+      const x = flat % W;
+      const y = Math.floor(flat / W);
+      px[flat * 4 + 3] = 0;
+      seed(x + 1, y);
+      seed(x - 1, y);
+      seed(x, y + 1);
+      seed(x, y - 1);
+    }
+
     ctx.putImageData(imageData, 0, 0);
 
     this.textures.remove(key);
     if (opts.isSpriteSheet) {
-      this.textures.addSpriteSheet(key, canvas as unknown as HTMLImageElement, {
-        frameWidth: opts.frameWidth!,
-        frameHeight: opts.frameHeight!,
-      });
+      // Register the canvas as a texture, then explicitly slice it into
+      // spritesheet frames. (Phaser.addSpriteSheet expects an HTMLImageElement
+      // and the canvas-as-source path is fragile.)
+      const tex = this.textures.addCanvas(key, canvas);
+      if (tex) {
+        const fw = opts.frameWidth!;
+        const fh = opts.frameHeight!;
+        const cols = Math.floor(W / fw);
+        const rows = Math.floor(H / fh);
+        let frameIdx = 0;
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            tex.add(frameIdx, 0, c * fw, r * fh, fw, fh);
+            frameIdx++;
+          }
+        }
+      }
     } else {
       this.textures.addCanvas(key, canvas);
     }

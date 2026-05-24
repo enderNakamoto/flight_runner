@@ -213,7 +213,13 @@ export class PlayScene extends Phaser.Scene {
       .setOrigin(0.5).setLineSpacing(8).setDepth(10);
 
     this.hintText = this.add
-      .text(WORLD_WIDTH / 2, WORLD_HEIGHT - 36, "↑ / ↓ to steer", { fontFamily: "ui-monospace, Menlo, monospace", fontSize: "20px", color: "#dddddd" })
+      .text(WORLD_WIDTH / 2, WORLD_HEIGHT - 36, "↑ / ↓ to steer", {
+        fontFamily: "ui-monospace, Menlo, monospace",
+        fontSize: "20px",
+        color: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 5,
+      })
       .setOrigin(0.5, 1).setDepth(10);
 
     const kb = this.input.keyboard!;
@@ -420,6 +426,9 @@ export class PlayScene extends Phaser.Scene {
       if (!sprite) {
         sprite = this.add.image(t.x, t.y, "fuel_token").setDepth(4);
         sprite.setDisplaySize(FUEL_TOKEN_DISPLAY, FUEL_TOKEN_DISPLAY);
+        // Light-blue glow so the gold coin pops against the orange/red sunset
+        // and dusk backgrounds where the token's own colour blends in.
+        sprite.preFX?.addGlow(0x80c8ff, 6, 0, false, 0.6, 8);
         this.fuelTokenSprites.set(t.id, sprite);
       }
       sprite.x = t.x; sprite.y = t.y;
