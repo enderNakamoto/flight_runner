@@ -19,5 +19,7 @@ export function backgroundFor(stage: Stage, seed: number): string {
   const variants = VARIANTS_BY_STAGE[stage];
   // Use unsigned modulo so negative seeds don't pick out-of-bounds.
   const idx = ((seed >>> 0) + (stage * 17)) % variants.length;
-  return variants[idx]!;
+  // BootScene builds a `_seamless` companion texture for each bg key — a
+  // 2W×H ping-pong canvas that tiles without a visible wrap seam.
+  return `${variants[idx]!}_seamless`;
 }

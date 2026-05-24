@@ -9,6 +9,8 @@ import {
   BIRD_SMALL_HITBOX_H,
   BIRD_SMALL_HITBOX_W,
   BTN_DOWN,
+  BTN_LEFT,
+  BTN_RIGHT,
   BTN_UP,
   DRONE_DISPLAY_H,
   DRONE_DISPLAY_W,
@@ -34,8 +36,9 @@ import {
   PILLAR_SRC_H,
   PILLAR_TOP_GAP_PAD_SRC,
   PILLAR_WIDTH,
-  PLANE_HITBOX_H,
-  PLANE_HITBOX_W,
+  PLANE_DISPLAY_H,
+  PLANE_DISPLAY_W,
+  PLANE_HITBOX_PARTS,
   PLANE_X,
   STAGE_NAMES,
   STAGE_TABLE,
@@ -147,8 +150,14 @@ export class PlayScene extends Phaser.Scene {
 
   private keyUp!: Phaser.Input.Keyboard.Key;
   private keyDown!: Phaser.Input.Keyboard.Key;
+  private keyLeft!: Phaser.Input.Keyboard.Key;
+  private keyRight!: Phaser.Input.Keyboard.Key;
   private keyW!: Phaser.Input.Keyboard.Key;
   private keyS!: Phaser.Input.Keyboard.Key;
+  private keyA!: Phaser.Input.Keyboard.Key;
+  private keyD!: Phaser.Input.Keyboard.Key;
+
+  private speedText!: Phaser.GameObjects.Text;
 
   private debug = false;
   private debugGfx?: Phaser.GameObjects.Graphics;
@@ -172,8 +181,10 @@ export class PlayScene extends Phaser.Scene {
       .setOrigin(0, 0)
       .setDepth(15);
 
-    this.planeSprite = this.add.image(PLANE_X, this.state.plane.y, "plane").setDepth(6);
-    this.planeSprite.setDisplaySize(96, 48);
+    // Plane below enemies/missiles so a colliding entity is visible at the
+    // moment of game-over instead of being hidden behind the 256×128 plane art.
+    this.planeSprite = this.add.image(PLANE_X, this.state.plane.y, "plane").setDepth(4);
+    this.planeSprite.setDisplaySize(PLANE_DISPLAY_W, PLANE_DISPLAY_H);
 
     this.scoreText = this.add
       .text(24, 18, "0", { fontFamily: "ui-monospace, Menlo, monospace", fontSize: "48px", color: "#ffffff", stroke: "#000000", strokeThickness: 6 })
@@ -208,14 +219,28 @@ export class PlayScene extends Phaser.Scene {
     const kb = this.input.keyboard!;
     this.keyUp = kb.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
     this.keyDown = kb.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN);
+    this.keyLeft = kb.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT);
+    this.keyRight = kb.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT);
     this.keyW = kb.addKey(Phaser.Input.Keyboard.KeyCodes.W);
     this.keyS = kb.addKey(Phaser.Input.Keyboard.KeyCodes.S);
+    this.keyA = kb.addKey(Phaser.Input.Keyboard.KeyCodes.A);
+    this.keyD = kb.addKey(Phaser.Input.Keyboard.KeyCodes.D);
     kb.on("keydown-UP", () => this.onSteerPressed());
     kb.on("keydown-DOWN", () => this.onSteerPressed());
+    kb.on("keydown-LEFT", () => this.onSteerPressed());
+    kb.on("keydown-RIGHT", () => this.onSteerPressed());
     kb.on("keydown-W", () => this.onSteerPressed());
     kb.on("keydown-S", () => this.onSteerPressed());
+    kb.on("keydown-A", () => this.onSteerPressed());
+    kb.on("keydown-D", () => this.onSteerPressed());
     kb.on("keydown-SPACE", () => this.onSteerPressed());
     kb.on("keydown-R", () => this.maybeRestart());
+
+    // Small speed indicator near the fuel bar — shows ◀ / ▶ when held.
+    this.speedText = this.add
+      .text(WORLD_WIDTH - 24, 100, "", { fontFamily: "ui-monospace, Menlo, monospace", fontSize: "20px", color: "#ffd54f", stroke: "#000000", strokeThickness: 4 })
+      .setOrigin(1, 0)
+      .setDepth(10);
 
     this.debug = debugEnabled();
     if (this.debug) {
@@ -241,7 +266,11 @@ export class PlayScene extends Phaser.Scene {
           best: this.best,
         }),
         constants: () => ({
-          PLANE_X, PLANE_HITBOX_W, PLANE_HITBOX_H,
+          PLANE_X,
+          // Outer AABB — for legacy collision-classifier tests.
+          PLANE_HITBOX_W: 240, PLANE_HITBOX_H: 102, PLANE_HITBOX_OFFSET_Y: -4,
+          // Exposed multi-rect parts for tests that want to match the sim.
+          PLANE_HITBOX_PARTS: PLANE_HITBOX_PARTS as unknown as number,
           PILLAR_WIDTH, PILLAR_HITBOX_W, PILLAR_SRC_H, PILLAR_TOP_GAP_PAD_SRC, PILLAR_BOT_GAP_PAD_SRC, PILLAR_GAP,
           BIRD_SMALL_HITBOX_W, BIRD_SMALL_HITBOX_H, BIRD_BIG_HITBOX_W, BIRD_BIG_HITBOX_H,
           DRONE_HITBOX_W, DRONE_HITBOX_H, JET_HITBOX_W, JET_HITBOX_H, UFO_HITBOX_W, UFO_HITBOX_H,
@@ -275,6 +304,8 @@ export class PlayScene extends Phaser.Scene {
     let b = 0;
     if (this.keyUp.isDown || this.keyW.isDown) b |= BTN_UP;
     if (this.keyDown.isDown || this.keyS.isDown) b |= BTN_DOWN;
+    if (this.keyLeft.isDown || this.keyA.isDown) b |= BTN_LEFT;
+    if (this.keyRight.isDown || this.keyD.isDown) b |= BTN_RIGHT;
     return b;
   }
 
@@ -306,13 +337,17 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private render(delta: number): void {
+    // Backgrounds scroll using the seamless mirror-composed textures built in
+    // BootScene; scroll speed follows the player's throttle so ← / → feels
+    // like the world is dragging by.
     if (this.phase === "ready") {
       this.bg.tilePositionX += delta * 0.04;
       this.planeSprite.y = this.state.plane.y + Math.sin(this.time.now / 220) * 6;
       this.planeSprite.setRotation(0);
     } else {
-      this.bg.tilePositionX = this.state.tick * 1.5;
-      if (this.bgFading) this.bgFading.tilePositionX = this.state.tick * 1.5;
+      const scroll = this.state.worldDistance * 1.5;
+      this.bg.tilePositionX = scroll;
+      if (this.bgFading) this.bgFading.tilePositionX = scroll;
       this.planeSprite.y = this.state.plane.y;
       this.planeSprite.setRotation(Phaser.Math.Clamp(this.state.plane.vy / 12, -0.45, 0.45));
     }
@@ -366,7 +401,9 @@ export class PlayScene extends Phaser.Scene {
       if (!sprite) {
         sprite = this.add.image(m.x, m.y, "missiles", m.frame).setDepth(5);
         sprite.setDisplaySize(MISSILE_DISPLAY_W, MISSILE_DISPLAY_H);
-        sprite.setFlipX(true); // missile sprites face right by default; flip to fly left
+        // Source missiles in the spritesheet already face LEFT (nose left,
+        // exhaust right), which matches their leftward motion. assets.json
+        // incorrectly says "facing: right" — don't flip.
         this.missileSprites.set(m.id, sprite);
       }
       sprite.x = m.x; sprite.y = m.y;
@@ -386,9 +423,13 @@ export class PlayScene extends Phaser.Scene {
         this.fuelTokenSprites.set(t.id, sprite);
       }
       sprite.x = t.x; sprite.y = t.y;
-      // Spin animation — tween scaleX across [-1, 1] based on time.
+      // Spin animation — flip across the vertical axis. scaleX must remain
+      // proportional to the base display size; the source PNG is 1254×1254
+      // so the resting scale is FUEL_TOKEN_DISPLAY / 1254, not 1.
       const phase = this.time.now / 280;
-      sprite.scaleX = Math.cos(phase) * (FUEL_TOKEN_DISPLAY / sprite.width);
+      const baseScale = FUEL_TOKEN_DISPLAY / (sprite.texture.getSourceImage() as HTMLImageElement | HTMLCanvasElement).width;
+      sprite.scaleX = baseScale * Math.cos(phase);
+      sprite.scaleY = baseScale;
     }
     for (const [id, sprite] of this.fuelTokenSprites) {
       if (!seenTokens.has(id)) { sprite.destroy(); this.fuelTokenSprites.delete(id); }
@@ -431,10 +472,20 @@ export class PlayScene extends Phaser.Scene {
     this.scoreText.setText(String(this.state.score));
     this.bestText.setText(this.formatBest());
 
+    // Speed indicator
+    if (this.phase === "playing") {
+      const m = this.state.worldSpeedMul;
+      if (m > 1.01) this.speedText.setText(`▶▶  ${m.toFixed(1)}×`);
+      else if (m < 0.99) this.speedText.setText(`◀  ${m.toFixed(1)}×`);
+      else this.speedText.setText("");
+    } else {
+      this.speedText.setText("");
+    }
+
     if (this.phase === "ready") {
       this.statusText.setText("PRESS ↑ / ↓\nTO FLY");
       this.statusText.setColor("#ffffff");
-      this.hintText.setText("↑ / ↓ to steer");
+      this.hintText.setText("↑ ↓ steer    ← → throttle");
     } else if (this.phase === "gameOver") {
       const causedByFuel = stage.fuelEnabled && this.state.fuel <= 0;
       const head = causedByFuel
@@ -447,7 +498,7 @@ export class PlayScene extends Phaser.Scene {
       this.hintText.setText("R to restart");
     } else {
       this.statusText.setText("");
-      this.hintText.setText("↑ / ↓ to steer");
+      this.hintText.setText("↑ ↓ steer    ← → throttle");
     }
   }
 
@@ -457,7 +508,11 @@ export class PlayScene extends Phaser.Scene {
 
     const alive = !this.state.gameOver;
     g.lineStyle(2, alive ? 0x00ff00 : 0xff0000, 1);
-    g.strokeRect(PLANE_X - PLANE_HITBOX_W / 2, this.state.plane.y - PLANE_HITBOX_H / 2, PLANE_HITBOX_W, PLANE_HITBOX_H);
+    for (const r of PLANE_HITBOX_PARTS) {
+      const cx = PLANE_X + r.offsetX;
+      const cy = this.state.plane.y + r.offsetY;
+      g.strokeRect(cx - r.w / 2, cy - r.h / 2, r.w, r.h);
+    }
 
     const pInsetX = (PILLAR_WIDTH - PILLAR_HITBOX_W) / 2;
     for (const p of this.state.pillars) {

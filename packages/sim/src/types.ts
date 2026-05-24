@@ -4,6 +4,8 @@ export interface PlayerInput {
 
 export const BTN_UP = 1 << 0;
 export const BTN_DOWN = 1 << 1;
+export const BTN_LEFT = 1 << 2;
+export const BTN_RIGHT = 1 << 3;
 
 export interface PRNGState {
   s: number;
@@ -69,6 +71,11 @@ export interface GameState {
   stage: number;            // index into STAGE_TABLE
   stageJustChanged: boolean; // transient per-tick render cue; not hashed
   fuel: number;             // 0..FUEL_MAX; ignored while stage.fuelEnabled === false
+  worldSpeedMul: number;    // current tick's horizontal-motion multiplier (0.5 / 1 / 3 by input)
+  worldDistance: number;    // accumulated worldSpeedMul; spawn cadence + bg parallax both gate on this
+  nextPillarDistance: number;
+  nextEnemyDistance: number;
+  nextFuelDistance: number;
   plane: PlaneState;
   pillars: Pillar[];
   nextPillarId: number;

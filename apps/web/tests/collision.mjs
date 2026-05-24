@@ -96,10 +96,11 @@ if (!lastSnap) {
   fail("timed out without dying", `final: ${JSON.stringify(lastSnap)}`);
 } else {
   // Classify cause-of-death.
+  const planeCy = lastSnap.plane.y + (C.PLANE_HITBOX_OFFSET_Y ?? 0);
   const planeLeft = C.PLANE_X - C.PLANE_HITBOX_W / 2;
   const planeRight = C.PLANE_X + C.PLANE_HITBOX_W / 2;
-  const planeTop = lastSnap.plane.y - C.PLANE_HITBOX_H / 2;
-  const planeBottom = lastSnap.plane.y + C.PLANE_HITBOX_H / 2;
+  const planeTop = planeCy - C.PLANE_HITBOX_H / 2;
+  const planeBottom = planeCy + C.PLANE_HITBOX_H / 2;
 
   const hitWorld =
     lastSnap.plane.y < 0 || lastSnap.plane.y > C.WORLD_HEIGHT;

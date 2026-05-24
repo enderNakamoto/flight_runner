@@ -90,10 +90,11 @@ if (!dead.gameOver) { fail("never died"); await browser.close(); process.exit(1)
 
 const hitWorld = dead.plane.y < 0 || dead.plane.y > C.WORLD_HEIGHT;
 // Classify cause by checking plane overlap with any enemy in the final frame.
+const planeCy = dead.plane.y + (C.PLANE_HITBOX_OFFSET_Y ?? 0);
 const planeLeft = C.PLANE_X - C.PLANE_HITBOX_W / 2;
 const planeRight = C.PLANE_X + C.PLANE_HITBOX_W / 2;
-const planeTop = dead.plane.y - C.PLANE_HITBOX_H / 2;
-const planeBottom = dead.plane.y + C.PLANE_HITBOX_H / 2;
+const planeTop = planeCy - C.PLANE_HITBOX_H / 2;
+const planeBottom = planeCy + C.PLANE_HITBOX_H / 2;
 const hitBird = dead.enemies.some((e) => {
   const w = e.kind === 0 ? C.BIRD_SMALL_HITBOX_W : C.BIRD_BIG_HITBOX_W;
   const h = e.kind === 0 ? C.BIRD_SMALL_HITBOX_H : C.BIRD_BIG_HITBOX_H;

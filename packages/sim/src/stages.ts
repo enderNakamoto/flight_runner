@@ -31,12 +31,13 @@ export const MISSILE_RARE = 1 << 2;
 export interface StageParams {
   scoreGate: number;
   pillarsEnabled: boolean;
+  pillarSpawnPeriod: number;  // distance units between pillars (0 disables)
   pillarGap: number;
   scrollSpeed: number;
   fuelEnabled: boolean;
   fuelDrainPerTick: number;
-  fuelSpawnPeriod: number;
-  enemySpawnPeriod: number;
+  fuelSpawnPeriod: number;    // distance units between fuel tokens
+  enemySpawnPeriod: number;   // distance units between enemy rolls
   enemyMask: number;
   birdTaper: { startScore: number; endScore: number } | null;
   birdSmallSpeed: number;
@@ -50,6 +51,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
   /* Common */ {
     scoreGate: 0,
     pillarsEnabled: false,
+    pillarSpawnPeriod: 0,
     pillarGap: 0,
     scrollSpeed: 2.0,
     fuelEnabled: false,
@@ -67,6 +69,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
   /* Uncommon */ {
     scoreGate: 12,
     pillarsEnabled: false,
+    pillarSpawnPeriod: 0,
     pillarGap: 0,
     scrollSpeed: 2.1,
     fuelEnabled: true,
@@ -84,6 +87,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
   /* Rare */ {
     scoreGate: 37,
     pillarsEnabled: true,
+    pillarSpawnPeriod: 440,
     pillarGap: 220,
     scrollSpeed: 2.3,
     fuelEnabled: true,
@@ -101,6 +105,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
   /* Legendary */ {
     scoreGate: 125,
     pillarsEnabled: true,
+    pillarSpawnPeriod: 380,
     pillarGap: 200,
     scrollSpeed: 2.5,
     fuelEnabled: true,
@@ -118,6 +123,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
   /* Mythical */ {
     scoreGate: 300,
     pillarsEnabled: true,
+    pillarSpawnPeriod: 320,
     pillarGap: 180,
     scrollSpeed: 2.7,
     fuelEnabled: true,

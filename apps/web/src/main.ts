@@ -9,7 +9,9 @@ new Phaser.Game({
   width: WORLD_WIDTH,
   height: WORLD_HEIGHT,
   backgroundColor: "#1a2735",
-  pixelArt: false,
+  // Pixel-art assets — nearest-neighbour filtering removes the white halo
+  // that linear filtering would produce around transparent sprite edges.
+  pixelArt: true,
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
