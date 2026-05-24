@@ -57,15 +57,15 @@ export const PILLAR_GAP_MAX_Y = WORLD_HEIGHT - 160;
 // Birds. Both PNGs are 1536×1024; the bird occupies most of the canvas with a
 // fair amount of empty wing-extent. Tuned smaller so the bird-only stages
 // don't feel like dodging hawks the size of the plane.
-export const BIRD_SMALL_DISPLAY_W = 56;
-export const BIRD_SMALL_DISPLAY_H = 40;
-export const BIRD_SMALL_HITBOX_W = 38;
-export const BIRD_SMALL_HITBOX_H = 22;
+export const BIRD_SMALL_DISPLAY_W = 34;
+export const BIRD_SMALL_DISPLAY_H = 24;
+export const BIRD_SMALL_HITBOX_W = 22;
+export const BIRD_SMALL_HITBOX_H = 14;
 
-export const BIRD_BIG_DISPLAY_W = 80;
-export const BIRD_BIG_DISPLAY_H = 56;
-export const BIRD_BIG_HITBOX_W = 58;
-export const BIRD_BIG_HITBOX_H = 34;
+export const BIRD_BIG_DISPLAY_W = 40;
+export const BIRD_BIG_DISPLAY_H = 28;
+export const BIRD_BIG_HITBOX_W = 28;
+export const BIRD_BIG_HITBOX_H = 16;
 
 // Enemies spawn just off-screen right and scroll left toward the plane.
 export const ENEMY_SPAWN_X_MARGIN = 80;

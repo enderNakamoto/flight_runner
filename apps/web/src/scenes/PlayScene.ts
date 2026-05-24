@@ -56,14 +56,15 @@ import {
 } from "@flight/sim";
 import { backgroundFor } from "../backgrounds.js";
 import { INTERMISSION_DURATION_MS, INTERMISSIONS } from "../intermissions.js";
-import { OUTROS } from "../outros.js";
+import { INTRO_BODY, INTRO_HEADER, INTRO_HINT, INTRO_TITLE_TEMPLATE } from "../intro.js";
+import { OUTROS, REASON_TAG, SENTINEL_PROTOCOL_URL } from "../outros.js";
 
 interface PillarSprites {
   top: Phaser.GameObjects.Image;
   bottom: Phaser.GameObjects.Image;
 }
 
-type Phase = "ready" | "playing" | "intermission" | "gameOver";
+type Phase = "intro" | "ready" | "playing" | "intermission" | "gameOver";
 
 const BEST_SCORE_KEY = "flight_scroll:best";
 
@@ -117,8 +118,8 @@ interface EnemySpec {
 }
 
 const ENEMY_SPEC: Record<EnemyKind, EnemySpec> = {
-  [EnemyKind.BirdSmall]: { displayW: BIRD_SMALL_DISPLAY_W, displayH: BIRD_SMALL_DISPLAY_H, hitboxW: BIRD_SMALL_HITBOX_W, hitboxH: BIRD_SMALL_HITBOX_H, texture: "bird_small", flipX: false },
-  [EnemyKind.BirdBig]:   { displayW: BIRD_BIG_DISPLAY_W,   displayH: BIRD_BIG_DISPLAY_H,   hitboxW: BIRD_BIG_HITBOX_W,   hitboxH: BIRD_BIG_HITBOX_H,   texture: "bird_big",   flipX: true  },
+  [EnemyKind.BirdSmall]: { displayW: BIRD_SMALL_DISPLAY_W, displayH: BIRD_SMALL_DISPLAY_H, hitboxW: BIRD_SMALL_HITBOX_W, hitboxH: BIRD_SMALL_HITBOX_H, texture: "bird_small_flap", flipX: false },
+  [EnemyKind.BirdBig]:   { displayW: BIRD_BIG_DISPLAY_W,   displayH: BIRD_BIG_DISPLAY_H,   hitboxW: BIRD_BIG_HITBOX_W,   hitboxH: BIRD_BIG_HITBOX_H,   texture: "bird_big_flap",   flipX: true  },
   [EnemyKind.Drone]:     { displayW: DRONE_DISPLAY_W,      displayH: DRONE_DISPLAY_H,      hitboxW: DRONE_HITBOX_W,      hitboxH: DRONE_HITBOX_H,      texture: "drone",      flipX: true  },
   [EnemyKind.Jet]:       { displayW: JET_DISPLAY_W,        displayH: JET_DISPLAY_H,        hitboxW: JET_HITBOX_W,        hitboxH: JET_HITBOX_H,        texture: "jet",        flipX: false },
   [EnemyKind.Ufo]:       { displayW: UFO_DISPLAY_W,        displayH: UFO_DISPLAY_H,        hitboxW: UFO_HITBOX_W,        hitboxH: UFO_HITBOX_H,        texture: "ufo",        flipX: false },
@@ -137,8 +138,10 @@ export class PlayScene extends Phaser.Scene {
 
   private planeSprite!: Phaser.GameObjects.Image;
   private pillarSprites = new Map<number, PillarSprites>();
-  private enemySprites = new Map<number, Phaser.GameObjects.Image>();
+  private enemySprites = new Map<number, Phaser.GameObjects.Sprite>();
+  private enemyPlumes = new Map<number, Phaser.GameObjects.Sprite>();
   private missileSprites = new Map<number, Phaser.GameObjects.Image>();
+  private missilePlumes = new Map<number, Phaser.GameObjects.Sprite>();
   private fuelTokenSprites = new Map<number, Phaser.GameObjects.Image>();
 
   private scoreText!: Phaser.GameObjects.Text;
@@ -172,13 +175,67 @@ export class PlayScene extends Phaser.Scene {
   private interHint!: Phaser.GameObjects.Text;
   private interEndsAt = 0;
 
+  // Typewriter state for the body text in intro / intermission / outro.
+  // Reveals one whole *word* at a time — feels like a teletype/radio dispatch
+  // rather than a CRT char-by-char animation. Whitespace and newlines
+  // surrounding a word ride along with it so line breaks land naturally.
+  private bodyFullText = "";
+  private bodyWordEnds: number[] = []; // end-of-word indices into bodyFullText
+  private bodyWordIndex = 0;
+  private bodyTypingDone = true;
+  private bodyTypeStartTime = 0;
+  private readonly bodyTypeMsPerWord = 380;
+
+  // Universal "SKIP" button shown while an overlay is up
+  private skipBtnBg!: Phaser.GameObjects.Rectangle;
+  private skipBtnText!: Phaser.GameObjects.Text;
+
+  // Sentinel Protocol outro — branded delay notification + CTA.
+  private spHeader!: Phaser.GameObjects.Text;
+  private spDivider!: Phaser.GameObjects.Rectangle;
+  private spTagline!: Phaser.GameObjects.Text;
+  private spSubTagline!: Phaser.GameObjects.Text;
+  private spCtaBg!: Phaser.GameObjects.Rectangle;
+  private spCtaText!: Phaser.GameObjects.Text;
+  private spCtaPulse?: Phaser.Tweens.Tween;
+
   constructor() { super("PlayScene"); }
 
   create(): void {
+    // Bird wing-flap animations — defined once at scene startup. Phaser anims
+    // are global, so guard so scene.restart() doesn't re-register.
+    if (!this.anims.exists("bird_small_flap")) {
+      this.anims.create({
+        key: "bird_small_flap",
+        frames: this.anims.generateFrameNumbers("bird_small_flap", { start: 0, end: 6 }),
+        frameRate: 12,
+        repeat: -1,
+      });
+    }
+    if (!this.anims.exists("bird_big_flap")) {
+      this.anims.create({
+        key: "bird_big_flap",
+        frames: this.anims.generateFrameNumbers("bird_big_flap", { start: 0, end: 6 }),
+        frameRate: 9,
+        repeat: -1,
+      });
+    }
+    if (!this.anims.exists("plume_flicker")) {
+      this.anims.create({
+        key: "plume_flicker",
+        frames: this.anims.generateFrameNumbers("plume_flicker", { start: 0, end: 6 }),
+        frameRate: 14,
+        repeat: -1,
+      });
+    }
+
     this.seed = this.makeSeed();
     this.state = createInitialState(this.seed, startStageFromUrl());
     this.accumulator = 0;
-    this.phase = "ready";
+    // Skip the intro for stage jumps via ?stage=N and for test runs — the
+    // briefing is only shown for fresh Stage-Common starts a real player sees.
+    this.phase =
+      this.state.stage === Stage.Common && !testEnabled() ? "intro" : "ready";
     this.best = this.loadBest();
 
     this.bg = this.add
@@ -250,10 +307,17 @@ export class PlayScene extends Phaser.Scene {
     kb.on("keydown-A", () => this.onSteerPressed());
     kb.on("keydown-D", () => this.onSteerPressed());
     kb.on("keydown-SPACE", () => {
-      if (this.phase === "intermission") this.exitIntermission();
-      else this.onSteerPressed();
+      if (this.phase === "intro" || this.phase === "intermission" || this.phase === "gameOver") {
+        this.onSkip();
+      } else {
+        this.onSteerPressed();
+      }
     });
     kb.on("keydown-R", () => this.maybeRestart());
+    // Any other key in intro fast-forwards / dismisses the briefing too.
+    kb.on("keydown", () => {
+      if (this.phase === "intro") this.onSkip();
+    });
 
     // Small speed indicator near the fuel bar — shows ◀ / ▶ when held.
     this.speedText = this.add
@@ -275,7 +339,7 @@ export class PlayScene extends Phaser.Scene {
       .setDepth(16)
       .setVisible(false);
     this.interTitle = this.add
-      .text(WORLD_WIDTH / 2, WORLD_HEIGHT / 2 - 120, "", {
+      .text(WORLD_WIDTH / 2, 110, "", {
         fontFamily: "ui-monospace, Menlo, monospace",
         fontSize: "44px",
         color: "#ffffff",
@@ -283,44 +347,142 @@ export class PlayScene extends Phaser.Scene {
         strokeThickness: 6,
         align: "center",
       })
-      .setOrigin(0.5)
+      .setOrigin(0.5, 0.5)
       .setDepth(17)
       .setVisible(false);
+    // Body is left-aligned with a fixed left margin so revealed words stay
+     // in place as more arrive — centred text would shuffle older words to
+     // the left each time a new one landed.
     this.interBody = this.add
-      .text(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, "", {
+      .text(160, 180, "", {
         fontFamily: "ui-monospace, Menlo, monospace",
         fontSize: "22px",
         color: "#e0e0e0",
         stroke: "#000000",
         strokeThickness: 4,
-        align: "center",
+        align: "left",
       })
-      .setOrigin(0.5)
-      .setLineSpacing(8)
+      .setOrigin(0, 0)
+      .setLineSpacing(10)
       .setDepth(17)
       .setVisible(false);
     this.interCountdown = this.add
-      .text(WORLD_WIDTH / 2, WORLD_HEIGHT - 110, "", {
+      .text(WORLD_WIDTH / 2, WORLD_HEIGHT - 90, "", {
         fontFamily: "ui-monospace, Menlo, monospace",
         fontSize: "20px",
         color: "#9be7ff",
         stroke: "#000000",
         strokeThickness: 4,
       })
-      .setOrigin(0.5)
+      .setOrigin(0.5, 0.5)
       .setDepth(17)
       .setVisible(false);
     this.interHint = this.add
-      .text(WORLD_WIDTH / 2, WORLD_HEIGHT - 70, "SPACE to continue", {
+      .text(WORLD_WIDTH / 2, WORLD_HEIGHT - 50, "SPACE to continue", {
         fontFamily: "ui-monospace, Menlo, monospace",
         fontSize: "16px",
         color: "#bbbbbb",
         stroke: "#000000",
         strokeThickness: 3,
       })
-      .setOrigin(0.5)
+      .setOrigin(0.5, 0.5)
       .setDepth(17)
       .setVisible(false);
+
+    // Sentinel Protocol header (game-over only)
+    this.spHeader = this.add
+      .text(WORLD_WIDTH / 2, 50, "SENTINEL PROTOCOL  //  DELAY NOTIFICATION", {
+        fontFamily: "ui-monospace, Menlo, monospace",
+        fontSize: "16px",
+        color: "#5ec8ff",
+        stroke: "#000000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5, 0.5)
+      .setDepth(17)
+      .setVisible(false);
+    this.spDivider = this.add
+      .rectangle(WORLD_WIDTH / 2, 72, 520, 1, 0x5ec8ff, 0.5)
+      .setDepth(17)
+      .setVisible(false);
+
+    // Main tagline — the headline pitch. Bumped large so it reads as the
+    // hero element of the outro screen.
+    this.spTagline = this.add
+      .text(WORLD_WIDTH / 2, 430, "THIS DELAY WOULD HAVE BEEN COVERED.", {
+        fontFamily: "ui-monospace, Menlo, monospace",
+        fontSize: "32px",
+        color: "#ffd54f",
+        stroke: "#000000",
+        strokeThickness: 6,
+        align: "center",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5, 0.5)
+      .setDepth(18)
+      .setVisible(false);
+
+    // Sub-tagline — spells out what Sentinel covers.
+    this.spSubTagline = this.add
+      .text(WORLD_WIDTH / 2, 480, "Delays. Diversions. Cancellations. Paid out in minutes.", {
+        fontFamily: "ui-monospace, Menlo, monospace",
+        fontSize: "20px",
+        color: "#e0e0e0",
+        stroke: "#000000",
+        strokeThickness: 4,
+        align: "center",
+      })
+      .setOrigin(0.5, 0.5)
+      .setDepth(18)
+      .setVisible(false);
+
+    // CTA button — large, bright, clickable. Opens sentinelprotocol.xyz with
+    // the run's data attached as query params.
+    this.spCtaBg = this.add
+      .rectangle(WORLD_WIDTH / 2, 560, 620, 80, 0x1976d2, 1)
+      .setDepth(17)
+      .setStrokeStyle(3, 0x80c8ff, 1)
+      .setVisible(false);
+    this.spCtaText = this.add
+      .text(WORLD_WIDTH / 2, 560, "COVER YOUR NEXT FLIGHT  →", {
+        fontFamily: "ui-monospace, Menlo, monospace",
+        fontSize: "32px",
+        color: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 5,
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5, 0.5)
+      .setDepth(18)
+      .setVisible(false);
+    this.spCtaBg
+      .setInteractive({ useHandCursor: true })
+      .on("pointerover", () => this.spCtaBg.setFillStyle(0x2196f3, 1))
+      .on("pointerout", () => this.spCtaBg.setFillStyle(0x1565c0, 1))
+      .on("pointerdown", () => this.openSentinelProtocol());
+
+    // Universal SKIP button — bottom-right corner of the overlay
+    this.skipBtnBg = this.add
+      .rectangle(WORLD_WIDTH - 70, WORLD_HEIGHT - 30, 110, 30, 0x000000, 0.55)
+      .setDepth(17)
+      .setStrokeStyle(1, 0xffffff, 0.6)
+      .setVisible(false);
+    this.skipBtnText = this.add
+      .text(WORLD_WIDTH - 70, WORLD_HEIGHT - 30, "SKIP  →", {
+        fontFamily: "ui-monospace, Menlo, monospace",
+        fontSize: "14px",
+        color: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 2,
+      })
+      .setOrigin(0.5, 0.5)
+      .setDepth(18)
+      .setVisible(false);
+    this.skipBtnBg
+      .setInteractive({ useHandCursor: true })
+      .on("pointerover", () => this.skipBtnBg.setFillStyle(0x333333, 0.8))
+      .on("pointerout", () => this.skipBtnBg.setFillStyle(0x000000, 0.55))
+      .on("pointerdown", () => this.onSkip());
 
     if (testEnabled()) {
       window.__TEST__ = {
@@ -355,6 +517,8 @@ export class PlayScene extends Phaser.Scene {
         }),
       };
     }
+
+    if (this.phase === "intro") this.showIntro();
   }
 
   override update(_time: number, delta: number): void {
@@ -378,7 +542,77 @@ export class PlayScene extends Phaser.Scene {
     } else if (this.phase === "intermission") {
       this.updateIntermission();
     }
+    // Typewriter ticks on every frame while an overlay is up
+    if (!this.bodyTypingDone && (this.phase === "intro" || this.phase === "intermission" || this.phase === "gameOver")) {
+      this.tickTyping();
+    }
     this.render(delta);
+  }
+
+  private startTyping(fullText: string): void {
+    this.bodyFullText = fullText;
+    // Find the end-of-word index for every non-whitespace run. The displayed
+    // substring expands to one of these endpoints at a time, so the surrounding
+    // whitespace / newlines reveal between words automatically.
+    this.bodyWordEnds = [];
+    const re = /\S+/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(fullText)) !== null) {
+      this.bodyWordEnds.push(m.index + m[0].length);
+    }
+    this.bodyWordIndex = 0;
+    this.bodyTypingDone = this.bodyWordEnds.length === 0;
+    this.bodyTypeStartTime = this.time.now;
+    this.refreshBodyText();
+  }
+
+  private tickTyping(): void {
+    const elapsed = this.time.now - this.bodyTypeStartTime;
+    const target = Math.min(
+      this.bodyWordEnds.length,
+      Math.floor(elapsed / this.bodyTypeMsPerWord) + 1,
+    );
+    if (target > this.bodyWordIndex) {
+      this.bodyWordIndex = target;
+      if (this.bodyWordIndex >= this.bodyWordEnds.length) {
+        this.bodyTypingDone = true;
+      }
+    }
+    // Refresh every frame so the cursor can blink even when no new word
+    // landed this tick.
+    this.refreshBodyText();
+  }
+
+  private refreshBodyText(): void {
+    if (this.bodyTypingDone) {
+      this.interBody.setText(this.bodyFullText);
+      return;
+    }
+    const visibleEnd = this.bodyWordEnds[this.bodyWordIndex - 1] ?? 0;
+    const visible = this.bodyFullText.substring(0, visibleEnd);
+    // Blinking caret. Use a half-width-ish block character so it reads as a
+    // teletype cursor in monospace. Swap to a space (not empty) so the line
+    // doesn't reflow as the cursor toggles off.
+    const showCursor = Math.floor(this.time.now / 500) % 2 === 0;
+    this.interBody.setText(visible + (showCursor ? "▌" : " "));
+  }
+
+  private completeTyping(): void {
+    this.bodyWordIndex = this.bodyWordEnds.length;
+    this.bodyTypingDone = true;
+    this.refreshBodyText();
+  }
+
+  // Universal skip — finishes typing if it's running, otherwise advances to
+  // the next phase based on which overlay is up.
+  private onSkip(): void {
+    if (!this.bodyTypingDone) {
+      this.completeTyping();
+      return;
+    }
+    if (this.phase === "intro") this.exitIntro();
+    else if (this.phase === "intermission") this.exitIntermission();
+    else if (this.phase === "gameOver") this.maybeRestart();
   }
 
   // Returns true if the sim tick loop should pause (intermission active).
@@ -387,11 +621,16 @@ export class PlayScene extends Phaser.Scene {
     if (!copy) return false;
     this.phase = "intermission";
     this.interEndsAt = this.time.now + INTERMISSION_DURATION_MS;
-    this.interTitle.setText(copy.title).setVisible(true);
-    this.interBody.setText(copy.body.join("\n")).setVisible(true);
-    this.interCountdown.setVisible(true);
-    this.interHint.setVisible(true);
+    // Use the intermission-default positions (briefing layout — different
+    // from outro which repositions title/body lower).
+    this.interTitle.setY(WORLD_HEIGHT / 2 - 120).setText(copy.title).setVisible(true);
+    this.interBody.setY(WORLD_HEIGHT / 2 - 70).setVisible(true);
+    this.interCountdown.setY(WORLD_HEIGHT - 110).setVisible(true);
+    this.interHint.setY(WORLD_HEIGHT - 70).setText("SPACE to continue").setVisible(true);
     this.interBg.setVisible(true);
+    this.skipBtnBg.setVisible(true);
+    this.skipBtnText.setVisible(true);
+    this.startTyping(copy.body.join("\n"));
     // Drop input that may have been queued so we don't immediately skip if
     // SPACE was held during the transition.
     this.accumulator = 0;
@@ -413,23 +652,91 @@ export class PlayScene extends Phaser.Scene {
     this.interBody.setVisible(false);
     this.interCountdown.setVisible(false);
     this.interHint.setVisible(false);
+    this.skipBtnBg.setVisible(false);
+    this.skipBtnText.setVisible(false);
+    this.bodyTypingDone = true;
     this.phase = "playing";
     this.accumulator = 0;
   }
 
-  // Shows the game-over outro by reusing the intermission overlay widgets
-  // with diversion copy. Stays up until the player presses R.
+  // Pre-flight briefing — first thing the player sees on a fresh run.
+  // Reuses the intermission widgets; any key dismisses to "ready".
+  private showIntro(): void {
+    const flightId = "FS-" + Math.abs(this.seed % 100000).toString().padStart(5, "0");
+    this.interBg.setVisible(true);
+    this.spHeader.setText(INTRO_HEADER).setVisible(true);
+    this.spDivider.setVisible(true);
+    this.interTitle.setY(130).setText(INTRO_TITLE_TEMPLATE(flightId)).setVisible(true);
+    this.interBody.setY(200).setVisible(true);
+    this.interHint.setY(WORLD_HEIGHT - 50).setText(INTRO_HINT).setVisible(true);
+    this.interCountdown.setVisible(false);
+    this.spTagline.setVisible(false);
+    this.spSubTagline.setVisible(false);
+    this.spCtaBg.setVisible(false);
+    this.spCtaText.setVisible(false);
+    this.skipBtnBg.setVisible(true);
+    this.skipBtnText.setVisible(true);
+    this.startTyping(INTRO_BODY.join("\n"));
+  }
+
+  private exitIntro(): void {
+    this.interBg.setVisible(false);
+    this.spHeader.setVisible(false);
+    this.spDivider.setVisible(false);
+    this.interTitle.setVisible(false);
+    this.interBody.setVisible(false);
+    this.interHint.setVisible(false);
+    this.skipBtnBg.setVisible(false);
+    this.skipBtnText.setVisible(false);
+    this.bodyTypingDone = true;
+    this.phase = "ready";
+  }
+
+  // Shows the game-over outro as a Sentinel Protocol delay slip. Reuses the
+  // intermission dark-screen widgets plus the slip + CTA created in create().
   private showOutro(): void {
     const copy = OUTROS[this.state.gameOverReason] ?? OUTROS[0];
     const isBest = this.state.score > 0 && this.state.score >= this.best;
+
+    // Move the existing intermission widgets to outro positions
+    this.interTitle.setY(120);
+    this.interBody.setY(180);
+    this.interCountdown.setY(WORLD_HEIGHT - 64);
+    this.interHint.setY(WORLD_HEIGHT - 30);
+
     this.interBg.setVisible(true);
     this.interTitle.setText(copy.title).setVisible(true);
-    this.interBody.setText(copy.body.join("\n")).setVisible(true);
+    this.interBody.setVisible(true);
     this.interCountdown
+      .setY(WORLD_HEIGHT - 50)
       .setText(isBest ? `NEW BEST  ${this.state.score}` : `SCORE ${this.state.score}    BEST ${this.best}`)
       .setColor(isBest ? "#ffd54f" : "#9be7ff")
       .setVisible(true);
-    this.interHint.setText("R to restart").setVisible(true);
+    this.interHint.setY(WORLD_HEIGHT - 20).setText("R to restart").setVisible(true);
+
+    // Sentinel Protocol branded outro — header, big tagline, sub-tagline, CTA.
+    this.spHeader.setText("SENTINEL PROTOCOL  //  DELAY NOTIFICATION").setVisible(true);
+    this.spDivider.setVisible(true);
+    this.spTagline.setVisible(true);
+    this.spSubTagline.setVisible(true);
+    this.spCtaBg.setVisible(true);
+    this.spCtaText.setVisible(true);
+
+    // SKIP button — in outro it functions as "restart now"
+    this.skipBtnBg.setVisible(true);
+    this.skipBtnText.setVisible(true);
+    this.startTyping(copy.body.join("\n"));
+
+    // Subtle breathing pulse on the CTA so it reads as the action to take.
+    this.spCtaPulse?.stop();
+    this.spCtaPulse = this.tweens.add({
+      targets: [this.spCtaBg, this.spCtaText],
+      scale: { from: 1, to: 1.045 },
+      duration: 900,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
   }
 
   private hideOutro(): void {
@@ -439,6 +746,38 @@ export class PlayScene extends Phaser.Scene {
     this.interCountdown.setVisible(false);
     this.interCountdown.setColor("#9be7ff");
     this.interHint.setVisible(false);
+    this.spHeader.setVisible(false);
+    this.spDivider.setVisible(false);
+    this.spTagline.setVisible(false);
+    this.spSubTagline.setVisible(false);
+    this.spCtaBg.setVisible(false);
+    this.spCtaText.setVisible(false);
+    this.skipBtnBg.setVisible(false);
+    this.skipBtnText.setVisible(false);
+    this.bodyTypingDone = true;
+    if (this.spCtaPulse) {
+      this.spCtaPulse.stop();
+      this.spCtaBg.setScale(1);
+      this.spCtaText.setScale(1);
+      this.spCtaPulse = undefined;
+    }
+  }
+
+  private openSentinelProtocol(): void {
+    const flightId = "FS-" + Math.abs(this.seed % 100000).toString().padStart(5, "0");
+    const stageName = STAGE_NAMES[this.state.stage as Stage]!.toLowerCase();
+    const reasonTag = REASON_TAG[this.state.gameOverReason] ?? "unknown";
+    const params = new URLSearchParams({
+      flight: flightId,
+      stage: stageName,
+      reason: reasonTag,
+      score: String(this.state.score),
+    });
+    try {
+      window.open(`${SENTINEL_PROTOCOL_URL}?${params.toString()}`, "_blank", "noopener,noreferrer");
+    } catch {
+      // ignore — popup blocker or unavailable window
+    }
   }
 
   private readButtons(): number {
@@ -493,6 +832,7 @@ export class PlayScene extends Phaser.Scene {
       this.planeSprite.setRotation(Phaser.Math.Clamp(this.state.plane.vy / 12, -0.45, 0.45));
     }
 
+
     // ---- Pillars ----
     const seenPillars = new Set<number>();
     for (const p of this.state.pillars) {
@@ -523,15 +863,42 @@ export class PlayScene extends Phaser.Scene {
       const spec = ENEMY_SPEC[e.kind as EnemyKind];
       let sprite = this.enemySprites.get(e.id);
       if (!sprite) {
-        sprite = this.add.image(e.x, e.y, spec.texture).setDepth(5);
-        sprite.setDisplaySize(spec.displayW, spec.displayH);
+        sprite = this.add.sprite(e.x, e.y, spec.texture).setDepth(5);
+        // Bird spritesheets are square (64x64 / 96x96) with the bird centered
+        // and proportional whitespace — stretching to the rectangular display
+        // dims would pancake them, so use displayW for both axes. Hitboxes are
+        // independent and stay tight to the actual silhouette.
+        const isBird = e.kind === EnemyKind.BirdSmall || e.kind === EnemyKind.BirdBig;
+        if (isBird) sprite.setDisplaySize(spec.displayW, spec.displayW);
+        else sprite.setDisplaySize(spec.displayW, spec.displayH);
         sprite.setFlipX(spec.flipX);
+        if (e.kind === EnemyKind.BirdSmall) sprite.play("bird_small_flap");
+        else if (e.kind === EnemyKind.BirdBig) sprite.play("bird_big_flap");
         this.enemySprites.set(e.id, sprite);
       }
       sprite.x = e.x; sprite.y = e.y;
+
+      // Jet exhaust plume — hot core flipped to the left so it attaches to
+      // the jet's right/rear edge (jets face left, moving left).
+      if (e.kind === EnemyKind.Jet) {
+        let plume = this.enemyPlumes.get(e.id);
+        if (!plume) {
+          plume = this.add.sprite(e.x, e.y, "plume_flicker").setDepth(4).setFlipX(true);
+          plume.setDisplaySize(70, 70);
+          plume.play("plume_flicker");
+          this.enemyPlumes.set(e.id, plume);
+        }
+        plume.x = e.x + spec.displayW / 2 - 8;
+        plume.y = e.y;
+      }
     }
     for (const [id, sprite] of this.enemySprites) {
-      if (!seenEnemies.has(id)) { sprite.destroy(); this.enemySprites.delete(id); }
+      if (!seenEnemies.has(id)) {
+        sprite.destroy();
+        this.enemySprites.delete(id);
+        const plume = this.enemyPlumes.get(id);
+        if (plume) { plume.destroy(); this.enemyPlumes.delete(id); }
+      }
     }
 
     // ---- Missiles ----
@@ -548,9 +915,25 @@ export class PlayScene extends Phaser.Scene {
         this.missileSprites.set(m.id, sprite);
       }
       sprite.x = m.x; sprite.y = m.y;
+
+      // Missile exhaust plume — same orientation as jets.
+      let plume = this.missilePlumes.get(m.id);
+      if (!plume) {
+        plume = this.add.sprite(m.x, m.y, "plume_flicker").setDepth(4).setFlipX(true);
+        plume.setDisplaySize(34, 34);
+        plume.play("plume_flicker");
+        this.missilePlumes.set(m.id, plume);
+      }
+      plume.x = m.x + MISSILE_DISPLAY_W / 2 - 4;
+      plume.y = m.y;
     }
     for (const [id, sprite] of this.missileSprites) {
-      if (!seenMissiles.has(id)) { sprite.destroy(); this.missileSprites.delete(id); }
+      if (!seenMissiles.has(id)) {
+        sprite.destroy();
+        this.missileSprites.delete(id);
+        const plume = this.missilePlumes.get(id);
+        if (plume) { plume.destroy(); this.missilePlumes.delete(id); }
+      }
     }
 
     // ---- Fuel tokens ----
@@ -705,7 +1088,9 @@ export class PlayScene extends Phaser.Scene {
     for (const sprites of this.pillarSprites.values()) { sprites.top.destroy(); sprites.bottom.destroy(); }
     this.pillarSprites.clear();
     for (const s of this.enemySprites.values()) s.destroy(); this.enemySprites.clear();
+    for (const s of this.enemyPlumes.values()) s.destroy(); this.enemyPlumes.clear();
     for (const s of this.missileSprites.values()) s.destroy(); this.missileSprites.clear();
+    for (const s of this.missilePlumes.values()) s.destroy(); this.missilePlumes.clear();
     for (const s of this.fuelTokenSprites.values()) s.destroy(); this.fuelTokenSprites.clear();
     if (this.bgFading) { this.bgFading.destroy(); this.bgFading = null; }
     this.scene.restart();

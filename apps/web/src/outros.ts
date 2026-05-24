@@ -9,6 +9,25 @@ export interface OutroCopy {
   body: readonly string[];
 }
 
+// Short label for the Sentinel Protocol slip's "DIVERSION CAUSE" field.
+export const REASON_TAG: Record<GameOverReason, string> = {
+  [GameOverReason.Unknown]:     "Unknown",
+  [GameOverReason.Bird]:        "Bird strike",
+  [GameOverReason.Drone]:       "Drone collision",
+  [GameOverReason.Jet]:         "Hostile fighter",
+  [GameOverReason.Ufo]:         "Unidentified contact",
+  [GameOverReason.Missile]:     "Hostile fire",
+  [GameOverReason.Pillar]:      "Severe weather",
+  [GameOverReason.WorldTop]:    "Pressurization",
+  [GameOverReason.WorldBottom]: "Terrain warning",
+  [GameOverReason.FuelOut]:     "Fuel emergency",
+};
+
+// Sentinel Protocol product page. The outro CTA opens this with the run's
+// context attached as query params so the landing page can deep-link the
+// fictional payout into the real sign-up flow.
+export const SENTINEL_PROTOCOL_URL = "https://sentinelprotocol.xyz";
+
 const FALLBACK: OutroCopy = {
   title: "FLIGHT DIVERTED",
   body: [

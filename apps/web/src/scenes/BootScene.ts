@@ -22,8 +22,11 @@ export class BootScene extends Phaser.Scene {
     // Obstacles
     this.load.image("top_pillar", "assets/obstacles/top_pillar.png");
     this.load.image("bottom_pillar", "assets/obstacles/bottom_pillar.png");
-    this.load.image("bird_small", "assets/obstacles/bird_small.png");
-    this.load.image("bird_big", "assets/obstacles/bird_big.png");
+    this.load.spritesheet("bird_small_flap", "assets/obstacles/bird_small_flap.png", { frameWidth: 64, frameHeight: 64 });
+    this.load.spritesheet("bird_big_flap", "assets/obstacles/bird_big_flap.png", { frameWidth: 96, frameHeight: 96 });
+
+    // Plume flicker — shown behind the plane while → is held (worldSpeedMul > 1).
+    this.load.spritesheet("plume_flicker", "assets/effects/plume.png", { frameWidth: 96, frameHeight: 96 });
     this.load.image("drone", "assets/obstacles/drone.png");
     this.load.image("jet", "assets/obstacles/jet.png");
     this.load.image("ufo", "assets/obstacles/ufo.png");

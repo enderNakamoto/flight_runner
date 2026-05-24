@@ -33,3 +33,6 @@ proof_artifacts.json
 
 # playwright smoke test artifacts
 apps/web/tests/screenshots/
+
+# MCP server configs (may contain API tokens)
+.mcp.json
