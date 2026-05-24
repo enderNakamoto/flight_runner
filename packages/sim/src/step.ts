@@ -1,9 +1,13 @@
 import {
+  PILLAR_BOT_GAP_PAD_SRC,
   PILLAR_GAP,
   PILLAR_GAP_MAX_Y,
   PILLAR_GAP_MIN_Y,
+  PILLAR_HITBOX_W,
   PILLAR_SCROLL_SPEED,
   PILLAR_SPAWN_PERIOD_TICKS,
+  PILLAR_SRC_H,
+  PILLAR_TOP_GAP_PAD_SRC,
   PILLAR_WIDTH,
   PLANE_HITBOX_H,
   PLANE_HITBOX_W,
@@ -46,6 +50,7 @@ export function stepMut(state: GameState, input: PlayerInput): void {
   const planeTop = state.plane.y - PLANE_HITBOX_H / 2;
   const planeBottom = state.plane.y + PLANE_HITBOX_H / 2;
 
+  const hitInsetX = (PILLAR_WIDTH - PILLAR_HITBOX_W) / 2;
   for (const p of state.pillars) {
     p.x -= PILLAR_SCROLL_SPEED;
 
@@ -54,12 +59,20 @@ export function stepMut(state: GameState, input: PlayerInput): void {
       state.score++;
     }
 
-    const pillarLeft = p.x;
-    const pillarRight = p.x + PILLAR_WIDTH;
+    const pillarLeft = p.x + hitInsetX;
+    const pillarRight = p.x + PILLAR_WIDTH - hitInsetX;
     if (planeRight > pillarLeft && planeLeft < pillarRight) {
-      const gapTop = p.gapY - PILLAR_GAP / 2;
-      const gapBottom = p.gapY + PILLAR_GAP / 2;
-      if (planeTop < gapTop || planeBottom > gapBottom) {
+      // Per-pillar gap insets scale with the stretched sprite, matching the
+      // cloud's transparent padding near the gap edge.
+      const visGapTop = p.gapY - PILLAR_GAP / 2;
+      const visGapBottom = p.gapY + PILLAR_GAP / 2;
+      const topPillarH = visGapTop;
+      const botPillarH = WORLD_HEIGHT - visGapBottom;
+      const topInset = (topPillarH * PILLAR_TOP_GAP_PAD_SRC) / PILLAR_SRC_H;
+      const botInset = (botPillarH * PILLAR_BOT_GAP_PAD_SRC) / PILLAR_SRC_H;
+      const hitGapTop = visGapTop - topInset;       // hitbox of top cloud ends here (above the visual gap edge)
+      const hitGapBottom = visGapBottom + botInset; // hitbox of bottom cloud starts here (below the visual gap edge)
+      if (planeTop < hitGapTop || planeBottom > hitGapBottom) {
         state.gameOver = true;
         return;
       }

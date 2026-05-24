@@ -2,8 +2,14 @@ import Phaser from "phaser";
 import {
   BTN_DOWN,
   BTN_UP,
+  PILLAR_BOT_GAP_PAD_SRC,
   PILLAR_GAP,
+  PILLAR_HITBOX_W,
+  PILLAR_SRC_H,
+  PILLAR_TOP_GAP_PAD_SRC,
   PILLAR_WIDTH,
+  PLANE_HITBOX_H,
+  PLANE_HITBOX_W,
   PLANE_X,
   TICK_MS,
   WORLD_HEIGHT,
@@ -22,6 +28,13 @@ type Phase = "ready" | "playing" | "gameOver";
 
 const BEST_SCORE_KEY = "flight_scroll:best";
 
+interface PillarSnap {
+  id: number;
+  x: number;
+  gapY: number;
+  passed: boolean;
+}
+
 interface TestHooks {
   ready: boolean;
   phase: () => Phase;
@@ -31,8 +44,21 @@ interface TestHooks {
     score: number;
     gameOver: boolean;
     plane: { y: number; vy: number };
-    pillars: number;
+    pillars: PillarSnap[];
     best: number;
+  };
+  constants: () => {
+    PLANE_X: number;
+    PLANE_HITBOX_W: number;
+    PLANE_HITBOX_H: number;
+    PILLAR_WIDTH: number;
+    PILLAR_HITBOX_W: number;
+    PILLAR_SRC_H: number;
+    PILLAR_TOP_GAP_PAD_SRC: number;
+    PILLAR_BOT_GAP_PAD_SRC: number;
+    PILLAR_GAP: number;
+    WORLD_WIDTH: number;
+    WORLD_HEIGHT: number;
   };
 }
 
@@ -45,6 +71,14 @@ declare global {
 function testEnabled(): boolean {
   try {
     return new URLSearchParams(window.location.search).get("test") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function debugEnabled(): boolean {
+  try {
+    return new URLSearchParams(window.location.search).get("debug") === "1";
   } catch {
     return false;
   }
@@ -69,6 +103,9 @@ export class PlayScene extends Phaser.Scene {
   private keyDown!: Phaser.Input.Keyboard.Key;
   private keyW!: Phaser.Input.Keyboard.Key;
   private keyS!: Phaser.Input.Keyboard.Key;
+
+  private debug = false;
+  private debugGfx?: Phaser.GameObjects.Graphics;
 
   constructor() {
     super("PlayScene");
@@ -153,6 +190,11 @@ export class PlayScene extends Phaser.Scene {
     kb.on("keydown-SPACE", () => this.onSteerPressed());
     kb.on("keydown-R", () => this.maybeRestart());
 
+    this.debug = debugEnabled();
+    if (this.debug) {
+      this.debugGfx = this.add.graphics().setDepth(20);
+    }
+
     if (testEnabled()) {
       window.__TEST__ = {
         ready: true,
@@ -163,8 +205,26 @@ export class PlayScene extends Phaser.Scene {
           score: this.state.score,
           gameOver: this.state.gameOver,
           plane: { y: this.state.plane.y, vy: this.state.plane.vy },
-          pillars: this.state.pillars.length,
+          pillars: this.state.pillars.map((p) => ({
+            id: p.id,
+            x: p.x,
+            gapY: p.gapY,
+            passed: p.passed,
+          })),
           best: this.best,
+        }),
+        constants: () => ({
+          PLANE_X,
+          PLANE_HITBOX_W,
+          PLANE_HITBOX_H,
+          PILLAR_WIDTH,
+          PILLAR_HITBOX_W,
+          PILLAR_SRC_H,
+          PILLAR_TOP_GAP_PAD_SRC,
+          PILLAR_BOT_GAP_PAD_SRC,
+          PILLAR_GAP,
+          WORLD_WIDTH,
+          WORLD_HEIGHT,
         }),
       };
     }
@@ -238,6 +298,10 @@ export class PlayScene extends Phaser.Scene {
       }
     }
 
+    if (this.debug && this.debugGfx) {
+      this.drawDebug();
+    }
+
     this.scoreText.setText(String(this.state.score));
     this.bestText.setText(this.formatBest());
 
@@ -256,6 +320,54 @@ export class PlayScene extends Phaser.Scene {
     } else {
       this.statusText.setText("");
       this.hintText.setText("↑ / ↓ to steer");
+    }
+  }
+
+  private drawDebug(): void {
+    const g = this.debugGfx!;
+    g.clear();
+
+    // Plane hitbox (green when alive, red when gameOver)
+    const alive = !this.state.gameOver;
+    g.lineStyle(2, alive ? 0x00ff00 : 0xff0000, 1);
+    g.strokeRect(
+      PLANE_X - PLANE_HITBOX_W / 2,
+      this.state.plane.y - PLANE_HITBOX_H / 2,
+      PLANE_HITBOX_W,
+      PLANE_HITBOX_H,
+    );
+
+    // Pillar hitboxes — the actual sim collision rects (inset from the sprite,
+    // with per-pillar vertical inset proportional to displayed height).
+    const insetX = (PILLAR_WIDTH - PILLAR_HITBOX_W) / 2;
+    for (const p of this.state.pillars) {
+      const visGapTop = p.gapY - PILLAR_GAP / 2;
+      const visGapBottom = p.gapY + PILLAR_GAP / 2;
+      const topPillarH = visGapTop;
+      const botPillarH = WORLD_HEIGHT - visGapBottom;
+      const topInset = (topPillarH * PILLAR_TOP_GAP_PAD_SRC) / PILLAR_SRC_H;
+      const botInset = (botPillarH * PILLAR_BOT_GAP_PAD_SRC) / PILLAR_SRC_H;
+      const hitGapTop = visGapTop - topInset;
+      const hitGapBottom = visGapBottom + botInset;
+
+      // Sprite bounds (dim) — to compare hitbox against the visible sprite
+      g.lineStyle(1, 0xffffff, 0.25);
+      g.strokeRect(p.x, 0, PILLAR_WIDTH, visGapTop);
+      g.strokeRect(p.x, visGapBottom, PILLAR_WIDTH, WORLD_HEIGHT - visGapBottom);
+
+      // Hitboxes (yellow, solid)
+      g.lineStyle(2, 0xffd400, 1);
+      g.strokeRect(p.x + insetX, 0, PILLAR_HITBOX_W, hitGapTop);
+      g.strokeRect(
+        p.x + insetX,
+        hitGapBottom,
+        PILLAR_HITBOX_W,
+        WORLD_HEIGHT - hitGapBottom,
+      );
+
+      // Effective gap (cyan)
+      g.lineStyle(1, 0x00e5ff, 0.7);
+      g.strokeRect(p.x + insetX, hitGapTop, PILLAR_HITBOX_W, hitGapBottom - hitGapTop);
     }
   }
 

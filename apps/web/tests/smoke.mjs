@@ -47,7 +47,7 @@ ok("test seam ready");
 
 const readyState = await page.evaluate(() => window.__TEST__.state());
 if (readyState.phase !== "ready") fail(`expected phase=ready, got ${readyState.phase}`);
-else ok(`phase=ready (score=${readyState.score}, pillars=${readyState.pillars}, plane.y=${readyState.plane.y})`);
+else ok(`phase=ready (score=${readyState.score}, pillars=${readyState.pillars.length}, plane.y=${readyState.plane.y})`);
 if (readyState.tick !== 0) fail(`expected tick=0 in ready, got ${readyState.tick}`);
 else ok("tick=0 in ready");
 
