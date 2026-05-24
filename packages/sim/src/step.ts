@@ -1,4 +1,9 @@
 import {
+  BANNER_PLANE_DISPLAY_H,
+  BANNER_PLANE_DISPLAY_W,
+  BANNER_PLANE_HITBOX_H,
+  BANNER_PLANE_HITBOX_W,
+  BANNER_PLANE_SCROLL_SPEED,
   BIRD_BIG_DISPLAY_H,
   BIRD_BIG_DISPLAY_W,
   BIRD_BIG_HITBOX_H,
@@ -55,6 +60,7 @@ import {
 } from "./constants.js";
 import { prngNextU32, prngRange } from "./prng.js";
 import {
+  ENEMY_BANNER_PLANE,
   ENEMY_BIRD_BIG,
   ENEMY_BIRD_SMALL,
   ENEMY_DRONE,
@@ -90,6 +96,8 @@ function reasonForEnemy(kind: EnemyKind): GameOverReason {
       return GameOverReason.Jet;
     case EnemyKind.Ufo:
       return GameOverReason.Ufo;
+    case EnemyKind.BannerPlane:
+      return GameOverReason.BannerPlane;
   }
 }
 
@@ -123,6 +131,8 @@ function enemyDims(kind: EnemyKind): EntityDims {
       return { hitboxW: JET_HITBOX_W, hitboxH: JET_HITBOX_H, displayW: JET_DISPLAY_W, displayH: JET_DISPLAY_H };
     case EnemyKind.Ufo:
       return { hitboxW: UFO_HITBOX_W, hitboxH: UFO_HITBOX_H, displayW: UFO_DISPLAY_W, displayH: UFO_DISPLAY_H };
+    case EnemyKind.BannerPlane:
+      return { hitboxW: BANNER_PLANE_HITBOX_W, hitboxH: BANNER_PLANE_HITBOX_H, displayW: BANNER_PLANE_DISPLAY_W, displayH: BANNER_PLANE_DISPLAY_H };
   }
 }
 
@@ -132,11 +142,12 @@ export function enemyDimsFor(kind: EnemyKind): EntityDims {
 
 function enemyBaseSpeed(stage: StageParams, kind: EnemyKind): number {
   switch (kind) {
-    case EnemyKind.BirdSmall: return stage.birdSmallSpeed;
-    case EnemyKind.BirdBig:   return stage.birdBigSpeed;
-    case EnemyKind.Drone:     return DRONE_SCROLL_SPEED;
-    case EnemyKind.Jet:       return JET_SCROLL_SPEED;
-    case EnemyKind.Ufo:       return UFO_SCROLL_SPEED;
+    case EnemyKind.BirdSmall:   return stage.birdSmallSpeed;
+    case EnemyKind.BirdBig:     return stage.birdBigSpeed;
+    case EnemyKind.Drone:       return DRONE_SCROLL_SPEED;
+    case EnemyKind.Jet:         return JET_SCROLL_SPEED;
+    case EnemyKind.Ufo:         return UFO_SCROLL_SPEED;
+    case EnemyKind.BannerPlane: return BANNER_PLANE_SCROLL_SPEED;
   }
 }
 
@@ -156,19 +167,26 @@ function birdSpawnWeight(stage: StageParams, score: number): number {
   return (endScore - score) / (endScore - startScore);
 }
 
-function pickEnemyKind(stage: StageParams, score: number, rng: GameState["rng"]): EnemyKind | null {
+const BANNER_PLANE_MAX_ACTIVE = 2;
+
+function pickEnemyKind(stage: StageParams, score: number, rng: GameState["rng"], bannerPlaneActive: number): EnemyKind | null {
   // Enabled kinds in this stage's mask, weighted by intended frequency.
   // Birds use the per-stage taper (Rare ramps them 1.0 → 0 across the gate range).
   // Drones are intentionally low-weight in Rare so the stage doesn't become a
   // missile gauntlet — once jets are also in the mask (Legendary+) they share
   // the air-vehicle pool so drone density falls further on its own.
+  // BannerPlane is hard-capped at BANNER_PLANE_MAX_ACTIVE on screen so the
+  // sponsor sign stays a rare sighting rather than a flock.
   const weighted: Array<{ kind: EnemyKind; w: number }> = [];
   const birdW = birdSpawnWeight(stage, score);
   if (stage.enemyMask & ENEMY_BIRD_SMALL) weighted.push({ kind: EnemyKind.BirdSmall, w: birdW });
   if (stage.enemyMask & ENEMY_BIRD_BIG)   weighted.push({ kind: EnemyKind.BirdBig,   w: birdW });
-  if (stage.enemyMask & ENEMY_DRONE)      weighted.push({ kind: EnemyKind.Drone,     w: 0.4 });
-  if (stage.enemyMask & ENEMY_JET)        weighted.push({ kind: EnemyKind.Jet,       w: 0.7 });
-  if (stage.enemyMask & ENEMY_UFO)        weighted.push({ kind: EnemyKind.Ufo,       w: 0.4 });
+  if (stage.enemyMask & ENEMY_DRONE)        weighted.push({ kind: EnemyKind.Drone,       w: 0.4 });
+  if (stage.enemyMask & ENEMY_JET)          weighted.push({ kind: EnemyKind.Jet,         w: 0.7 });
+  if (stage.enemyMask & ENEMY_UFO)          weighted.push({ kind: EnemyKind.Ufo,         w: 0.4 });
+  if ((stage.enemyMask & ENEMY_BANNER_PLANE) && bannerPlaneActive < BANNER_PLANE_MAX_ACTIVE) {
+    weighted.push({ kind: EnemyKind.BannerPlane, w: 0.15 });
+  }
 
   let total = 0;
   for (const e of weighted) total += e.w;
@@ -202,7 +220,9 @@ function rollMissileFrame(tierMask: number, rng: GameState["rng"]): { tier: Miss
 }
 
 function spawnEnemy(state: GameState, stage: StageParams): void {
-  const kind = pickEnemyKind(stage, state.score, state.rng);
+  let bannerPlaneActive = 0;
+  for (const e of state.enemies) if (e.kind === EnemyKind.BannerPlane) bannerPlaneActive++;
+  const kind = pickEnemyKind(stage, state.score, state.rng, bannerPlaneActive);
   if (kind === null) return;
   const dims = enemyDims(kind);
   const yMin = ENEMY_SPAWN_Y_MIN + dims.hitboxH / 2;

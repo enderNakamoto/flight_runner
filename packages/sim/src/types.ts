@@ -29,6 +29,7 @@ export const enum EnemyKind {
   Drone = 2,
   Jet = 3,
   Ufo = 4,
+  BannerPlane = 5,
 }
 
 export const enum GameOverReason {
@@ -42,6 +43,7 @@ export const enum GameOverReason {
   WorldTop = 7,
   WorldBottom = 8,
   FuelOut = 9,
+  BannerPlane = 10,
 }
 
 export interface Enemy {

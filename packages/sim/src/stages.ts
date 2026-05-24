@@ -22,6 +22,7 @@ export const ENEMY_BIRD_BIG = 1 << 1;
 export const ENEMY_DRONE = 1 << 2;
 export const ENEMY_JET = 1 << 3;
 export const ENEMY_UFO = 1 << 4;
+export const ENEMY_BANNER_PLANE = 1 << 5;
 
 // missile tier bitmask bits
 export const MISSILE_COMMON = 1 << 0;
@@ -58,7 +59,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
     fuelDrainPerTick: 0,
     fuelSpawnPeriod: 0,
     enemySpawnPeriod: 180,
-    enemyMask: ENEMY_BIRD_SMALL,
+    enemyMask: ENEMY_BIRD_SMALL | ENEMY_BANNER_PLANE,
     birdTaper: null,
     birdSmallSpeed: 3.6,
     birdBigSpeed: 0,
@@ -76,7 +77,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
     fuelDrainPerTick: 0.04,
     fuelSpawnPeriod: 320,
     enemySpawnPeriod: 150,
-    enemyMask: ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG,
+    enemyMask: ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG | ENEMY_BANNER_PLANE,
     birdTaper: null,
     birdSmallSpeed: 4.4,
     birdBigSpeed: 2.6,
@@ -94,7 +95,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
     fuelDrainPerTick: 0.05,
     fuelSpawnPeriod: 340,
     enemySpawnPeriod: 220,
-    enemyMask: ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG | ENEMY_DRONE,
+    enemyMask: ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG | ENEMY_DRONE | ENEMY_BANNER_PLANE,
     birdTaper: { startScore: 37, endScore: 125 },
     birdSmallSpeed: 4.4,
     birdBigSpeed: 2.6,
@@ -112,7 +113,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
     fuelDrainPerTick: 0.06,
     fuelSpawnPeriod: 450,
     enemySpawnPeriod: 180,
-    enemyMask: ENEMY_DRONE | ENEMY_JET,
+    enemyMask: ENEMY_DRONE | ENEMY_JET | ENEMY_BANNER_PLANE,
     birdTaper: null,
     birdSmallSpeed: 0,
     birdBigSpeed: 0,
@@ -130,7 +131,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
     fuelDrainPerTick: 0.07,
     fuelSpawnPeriod: 700,
     enemySpawnPeriod: 140,
-    enemyMask: ENEMY_DRONE | ENEMY_JET | ENEMY_UFO,
+    enemyMask: ENEMY_DRONE | ENEMY_JET | ENEMY_UFO | ENEMY_BANNER_PLANE,
     birdTaper: null,
     birdSmallSpeed: 0,
     birdBigSpeed: 0,

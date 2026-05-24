@@ -21,6 +21,7 @@ export const REASON_TAG: Record<GameOverReason, string> = {
   [GameOverReason.WorldTop]:    "Pressurization",
   [GameOverReason.WorldBottom]: "Terrain warning",
   [GameOverReason.FuelOut]:     "Fuel emergency",
+  [GameOverReason.BannerPlane]: "Banner-tow collision",
 };
 
 // Sentinel Protocol product page. The outro CTA opens this with the run's
@@ -126,6 +127,16 @@ export const OUTROS: Record<GameOverReason, OutroCopy> = {
       "Insufficient reserves to reach destination.",
       "",
       "Gliding to the nearest available runway.",
+    ],
+  },
+  [GameOverReason.BannerPlane]: {
+    title: "FLIGHT DIVERTED",
+    body: [
+      "Collision with a low-altitude banner tow.",
+      "Tow cable wrapped around the starboard wing.",
+      "",
+      "Diverting to the nearest airport",
+      "for cable extraction and inspection.",
     ],
   },
 };

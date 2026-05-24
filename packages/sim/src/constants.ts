@@ -67,6 +67,14 @@ export const BIRD_BIG_DISPLAY_H = 28;
 export const BIRD_BIG_HITBOX_W = 28;
 export const BIRD_BIG_HITBOX_H = 16;
 
+// Banner plane — slow propeller plane towing a sponsor banner. Hitbox covers
+// only the plane fuselage; the trailing banner is decorative.
+export const BANNER_PLANE_DISPLAY_W = 96;
+export const BANNER_PLANE_DISPLAY_H = 96;
+export const BANNER_PLANE_HITBOX_W = 64;
+export const BANNER_PLANE_HITBOX_H = 36;
+export const BANNER_PLANE_SCROLL_SPEED = 2.8;
+
 // Enemies spawn just off-screen right and scroll left toward the plane.
 export const ENEMY_SPAWN_X_MARGIN = 80;
 // Vertical spawn band — keeps birds from clipping the top/bottom of the world.

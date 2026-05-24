@@ -1,5 +1,9 @@
 import Phaser from "phaser";
 import {
+  BANNER_PLANE_DISPLAY_H,
+  BANNER_PLANE_DISPLAY_W,
+  BANNER_PLANE_HITBOX_H,
+  BANNER_PLANE_HITBOX_W,
   BIRD_BIG_DISPLAY_H,
   BIRD_BIG_DISPLAY_W,
   BIRD_BIG_HITBOX_H,
@@ -123,6 +127,7 @@ const ENEMY_SPEC: Record<EnemyKind, EnemySpec> = {
   [EnemyKind.Drone]:     { displayW: DRONE_DISPLAY_W,      displayH: DRONE_DISPLAY_H,      hitboxW: DRONE_HITBOX_W,      hitboxH: DRONE_HITBOX_H,      texture: "drone",      flipX: true  },
   [EnemyKind.Jet]:       { displayW: JET_DISPLAY_W,        displayH: JET_DISPLAY_H,        hitboxW: JET_HITBOX_W,        hitboxH: JET_HITBOX_H,        texture: "jet",        flipX: false },
   [EnemyKind.Ufo]:       { displayW: UFO_DISPLAY_W,        displayH: UFO_DISPLAY_H,        hitboxW: UFO_HITBOX_W,        hitboxH: UFO_HITBOX_H,        texture: "ufo",        flipX: false },
+  [EnemyKind.BannerPlane]: { displayW: BANNER_PLANE_DISPLAY_W, displayH: BANNER_PLANE_DISPLAY_H, hitboxW: BANNER_PLANE_HITBOX_W, hitboxH: BANNER_PLANE_HITBOX_H, texture: "propeller_plane", flipX: false },
 };
 
 export class PlayScene extends Phaser.Scene {
@@ -137,9 +142,15 @@ export class PlayScene extends Phaser.Scene {
   private flickerOverlay!: Phaser.GameObjects.Rectangle;
 
   private planeSprite!: Phaser.GameObjects.Image;
+  private planeSmokeSprite!: Phaser.GameObjects.Sprite;
   private pillarSprites = new Map<number, PillarSprites>();
   private enemySprites = new Map<number, Phaser.GameObjects.Sprite>();
   private enemyPlumes = new Map<number, Phaser.GameObjects.Sprite>();
+  private bannerParts = new Map<number, {
+    cord: Phaser.GameObjects.Rectangle;
+    banner: Phaser.GameObjects.Rectangle;
+    text: Phaser.GameObjects.Text;
+  }>();
   private missileSprites = new Map<number, Phaser.GameObjects.Image>();
   private missilePlumes = new Map<number, Phaser.GameObjects.Sprite>();
   private fuelTokenSprites = new Map<number, Phaser.GameObjects.Image>();
@@ -228,6 +239,22 @@ export class PlayScene extends Phaser.Scene {
         repeat: -1,
       });
     }
+    if (!this.anims.exists("smoke_drift")) {
+      this.anims.create({
+        key: "smoke_drift",
+        frames: this.anims.generateFrameNumbers("smoke_drift", { start: 0, end: 6 }),
+        frameRate: 8,
+        repeat: -1,
+      });
+    }
+    if (!this.anims.exists("propeller_spin")) {
+      this.anims.create({
+        key: "propeller_spin",
+        frames: this.anims.generateFrameNumbers("propeller_plane", { start: 0, end: 6 }),
+        frameRate: 24,
+        repeat: -1,
+      });
+    }
 
     this.seed = this.makeSeed();
     this.state = createInitialState(this.seed, startStageFromUrl());
@@ -247,6 +274,17 @@ export class PlayScene extends Phaser.Scene {
       .rectangle(0, 0, WORLD_WIDTH, WORLD_HEIGHT, 0xffffff, 0)
       .setOrigin(0, 0)
       .setDepth(15);
+
+    // Plane smoke trail — soft gray exhaust sitting behind the plane (depth 3
+    // so the plane silhouette covers the dense attachment end). Plane faces
+    // RIGHT so the trail attaches on the LEFT/tail side; source already has
+    // the dense puff on the right which lines up without flipping.
+    this.planeSmokeSprite = this.add
+      .sprite(PLANE_X - PLANE_DISPLAY_W / 2, this.state.plane.y, "smoke_drift")
+      .setDepth(3)
+      .setAlpha(0);
+    this.planeSmokeSprite.setDisplaySize(100, 100);
+    this.planeSmokeSprite.play("smoke_drift");
 
     // Plane below enemies/missiles so a colliding entity is visible at the
     // moment of game-over instead of being hidden behind the 256×128 plane art.
@@ -350,19 +388,20 @@ export class PlayScene extends Phaser.Scene {
       .setOrigin(0.5, 0.5)
       .setDepth(17)
       .setVisible(false);
-    // Body is left-aligned with a fixed left margin so revealed words stay
-     // in place as more arrive — centred text would shuffle older words to
-     // the left each time a new one landed.
+    // Body is horizontally centered. Origin (0.5, 0) anchors the textbox at
+    // its top-center so multi-line content stays balanced against the title
+    // and CTA. Note: typewriter reveal will shift the line slightly as words
+    // arrive (the box re-centers each tick) — acceptable trade for layout.
     this.interBody = this.add
-      .text(160, 180, "", {
+      .text(WORLD_WIDTH / 2, 180, "", {
         fontFamily: "ui-monospace, Menlo, monospace",
         fontSize: "22px",
         color: "#e0e0e0",
         stroke: "#000000",
         strokeThickness: 4,
-        align: "left",
+        align: "center",
       })
-      .setOrigin(0, 0)
+      .setOrigin(0.5, 0)
       .setLineSpacing(10)
       .setDepth(17)
       .setVisible(false);
@@ -832,6 +871,19 @@ export class PlayScene extends Phaser.Scene {
       this.planeSprite.setRotation(Phaser.Math.Clamp(this.state.plane.vy / 12, -0.45, 0.45));
     }
 
+    // Plane smoke trail — anchored to plane tail (left side, plane faces
+    // right) and rotated with the plane; alpha eases on while → is held
+    // (worldSpeedMul > 1) and off otherwise.
+    {
+      const angle = this.planeSprite.rotation;
+      const tailOffX = -130;
+      this.planeSmokeSprite.x = this.planeSprite.x + tailOffX * Math.cos(angle);
+      this.planeSmokeSprite.y = this.planeSprite.y + tailOffX * Math.sin(angle);
+      this.planeSmokeSprite.setRotation(angle);
+      const boosting = this.phase === "playing" && this.state.worldSpeedMul > 1.01;
+      const targetAlpha = boosting ? 1 : 0;
+      this.planeSmokeSprite.alpha = Phaser.Math.Linear(this.planeSmokeSprite.alpha, targetAlpha, 0.18);
+    }
 
     // ---- Pillars ----
     const seenPillars = new Set<number>();
@@ -874,9 +926,45 @@ export class PlayScene extends Phaser.Scene {
         sprite.setFlipX(spec.flipX);
         if (e.kind === EnemyKind.BirdSmall) sprite.play("bird_small_flap");
         else if (e.kind === EnemyKind.BirdBig) sprite.play("bird_big_flap");
+        else if (e.kind === EnemyKind.BannerPlane) sprite.play("propeller_spin");
         this.enemySprites.set(e.id, sprite);
       }
       sprite.x = e.x; sprite.y = e.y;
+
+      // Banner-tow trail — SENTINEL.XYZ banner pulled behind the propeller
+      // plane via a short cord. Plane faces left (moving left), so the banner
+      // trails to the right with a slight downward droop.
+      if (e.kind === EnemyKind.BannerPlane) {
+        let parts = this.bannerParts.get(e.id);
+        if (!parts) {
+          const cord = this.add.rectangle(0, 0, 28, 2, 0x333333).setDepth(4);
+          const banner = this.add
+            .rectangle(0, 0, 150, 30, 0xc62828)
+            .setDepth(4)
+            .setStrokeStyle(2, 0xffd54f);
+          const text = this.add
+            .text(0, 0, "SENTINEL.XYZ", {
+              fontFamily: "ui-monospace, Menlo, monospace",
+              fontSize: "18px",
+              color: "#ffffff",
+              stroke: "#000000",
+              strokeThickness: 3,
+              fontStyle: "bold",
+            })
+            .setOrigin(0.5, 0.5)
+            .setDepth(5);
+          parts = { cord, banner, text };
+          this.bannerParts.set(e.id, parts);
+        }
+        const tailX = e.x + spec.displayW / 2 - 8; // 8 px inside fuselage so the cord origin reads as attached
+        const droopY = e.y + 14;
+        parts.cord.x = tailX + 14;
+        parts.cord.y = (e.y + droopY) / 2;
+        parts.banner.x = tailX + 28 + 75; // cord length + half banner width
+        parts.banner.y = droopY;
+        parts.text.x = parts.banner.x;
+        parts.text.y = parts.banner.y;
+      }
 
       // Jet exhaust plume — hot core flipped to the left so it attaches to
       // the jet's right/rear edge (jets face left, moving left).
@@ -898,6 +986,13 @@ export class PlayScene extends Phaser.Scene {
         this.enemySprites.delete(id);
         const plume = this.enemyPlumes.get(id);
         if (plume) { plume.destroy(); this.enemyPlumes.delete(id); }
+        const parts = this.bannerParts.get(id);
+        if (parts) {
+          parts.cord.destroy();
+          parts.banner.destroy();
+          parts.text.destroy();
+          this.bannerParts.delete(id);
+        }
       }
     }
 
@@ -1089,6 +1184,8 @@ export class PlayScene extends Phaser.Scene {
     this.pillarSprites.clear();
     for (const s of this.enemySprites.values()) s.destroy(); this.enemySprites.clear();
     for (const s of this.enemyPlumes.values()) s.destroy(); this.enemyPlumes.clear();
+    for (const p of this.bannerParts.values()) { p.cord.destroy(); p.banner.destroy(); p.text.destroy(); }
+    this.bannerParts.clear();
     for (const s of this.missileSprites.values()) s.destroy(); this.missileSprites.clear();
     for (const s of this.missilePlumes.values()) s.destroy(); this.missilePlumes.clear();
     for (const s of this.fuelTokenSprites.values()) s.destroy(); this.fuelTokenSprites.clear();
