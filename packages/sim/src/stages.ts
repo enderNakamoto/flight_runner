@@ -1,12 +1,11 @@
 // Stage system — see spec/architecture.md §4.
 //
-// Phase 2a wires up the table and the Common→Uncommon transition; only
-// bird spawning + pillars-gating are exercised so far. Drone/jet/UFO/missile
-// fields are kept on the type so later phases can extend without reshaping the
-// table.
-//
-// Values are plain floats for now; they will move to Q24.8 fixed-point in
-// Phase 3 (Rust port + parity test).
+// Phase 3 status: the world-scroll axis is on Q24.8 (worldDistance and the
+// three *SpawnPeriod fields below). Everything else (entity positions, fuel,
+// plane y, speeds) is still float; subsequent slices convert each axis in
+// turn while the corpus parity runner gates each step.
+
+import { fp } from "./fp.js";
 
 export const enum Stage {
   Common = 0,
@@ -32,13 +31,13 @@ export const MISSILE_RARE = 1 << 2;
 export interface StageParams {
   scoreGate: number;
   pillarsEnabled: boolean;
-  pillarSpawnPeriod: number;  // distance units between pillars (0 disables)
+  pillarSpawnPeriod: number;  // Q24.8 distance units between pillars (0 disables)
   pillarGap: number;
   scrollSpeed: number;
   fuelEnabled: boolean;
   fuelDrainPerTick: number;
-  fuelSpawnPeriod: number;    // distance units between fuel tokens
-  enemySpawnPeriod: number;   // distance units between enemy rolls
+  fuelSpawnPeriod: number;    // Q24.8 distance units between fuel tokens
+  enemySpawnPeriod: number;   // Q24.8 distance units between enemy rolls
   enemyMask: number;
   birdTaper: { startScore: number; endScore: number } | null;
   birdSmallSpeed: number;
@@ -58,7 +57,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
     fuelEnabled: false,
     fuelDrainPerTick: 0,
     fuelSpawnPeriod: 0,
-    enemySpawnPeriod: 180,
+    enemySpawnPeriod: fp(180),
     enemyMask: ENEMY_BIRD_SMALL | ENEMY_BANNER_PLANE,
     birdTaper: null,
     birdSmallSpeed: 3.6,
@@ -75,8 +74,8 @@ export const STAGE_TABLE: readonly StageParams[] = [
     scrollSpeed: 2.1,
     fuelEnabled: true,
     fuelDrainPerTick: 0.04,
-    fuelSpawnPeriod: 320,
-    enemySpawnPeriod: 150,
+    fuelSpawnPeriod: fp(320),
+    enemySpawnPeriod: fp(150),
     enemyMask: ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG | ENEMY_BANNER_PLANE,
     birdTaper: null,
     birdSmallSpeed: 4.4,
@@ -88,13 +87,13 @@ export const STAGE_TABLE: readonly StageParams[] = [
   /* Rare */ {
     scoreGate: 37,
     pillarsEnabled: true,
-    pillarSpawnPeriod: 440,
+    pillarSpawnPeriod: fp(440),
     pillarGap: 220,
     scrollSpeed: 2.3,
     fuelEnabled: true,
     fuelDrainPerTick: 0.05,
-    fuelSpawnPeriod: 340,
-    enemySpawnPeriod: 220,
+    fuelSpawnPeriod: fp(340),
+    enemySpawnPeriod: fp(220),
     enemyMask: ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG | ENEMY_DRONE | ENEMY_BANNER_PLANE,
     birdTaper: { startScore: 37, endScore: 125 },
     birdSmallSpeed: 4.4,
@@ -106,13 +105,13 @@ export const STAGE_TABLE: readonly StageParams[] = [
   /* Legendary */ {
     scoreGate: 125,
     pillarsEnabled: true,
-    pillarSpawnPeriod: 380,
+    pillarSpawnPeriod: fp(380),
     pillarGap: 200,
     scrollSpeed: 2.5,
     fuelEnabled: true,
     fuelDrainPerTick: 0.06,
-    fuelSpawnPeriod: 450,
-    enemySpawnPeriod: 180,
+    fuelSpawnPeriod: fp(450),
+    enemySpawnPeriod: fp(180),
     enemyMask: ENEMY_DRONE | ENEMY_JET | ENEMY_BANNER_PLANE,
     birdTaper: null,
     birdSmallSpeed: 0,
@@ -124,13 +123,13 @@ export const STAGE_TABLE: readonly StageParams[] = [
   /* Mythical */ {
     scoreGate: 300,
     pillarsEnabled: true,
-    pillarSpawnPeriod: 320,
+    pillarSpawnPeriod: fp(320),
     pillarGap: 180,
     scrollSpeed: 2.7,
     fuelEnabled: true,
     fuelDrainPerTick: 0.07,
-    fuelSpawnPeriod: 700,
-    enemySpawnPeriod: 140,
+    fuelSpawnPeriod: fp(700),
+    enemySpawnPeriod: fp(140),
     enemyMask: ENEMY_DRONE | ENEMY_JET | ENEMY_UFO | ENEMY_BANNER_PLANE,
     birdTaper: null,
     birdSmallSpeed: 0,

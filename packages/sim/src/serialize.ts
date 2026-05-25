@@ -52,10 +52,12 @@ export function serializeState(state: GameState, reuse?: Uint8Array): Uint8Array
     | ((state.stage & 0xff) << 16),
   );
   wFp(state.fuel);
-  wFp(state.worldDistance);
-  wFp(state.nextPillarDistance);
-  wFp(state.nextEnemyDistance);
-  wFp(state.nextFuelDistance);
+  // worldDistance + the three nextXDistance fields are already Q24.8 (Phase
+  // 3 world-scroll slice); write them as i32 directly, no second shift.
+  wI32(state.worldDistance);
+  wI32(state.nextPillarDistance);
+  wI32(state.nextEnemyDistance);
+  wI32(state.nextFuelDistance);
   wFp(state.plane.y);
   wFp(state.plane.vy);
   wU32(state.rng.s);

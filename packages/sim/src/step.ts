@@ -58,6 +58,7 @@ import {
   WORLD_HEIGHT,
   WORLD_WIDTH,
 } from "./constants.js";
+import { fp } from "./fp.js";
 import { prngNextU32, prngRange } from "./prng.js";
 import {
   ENEMY_BANNER_PLANE,
@@ -323,7 +324,10 @@ export function stepMut(state: GameState, input: PlayerInput): void {
   // ---- World scroll speed ----
   const speedMul = computeSpeedMul(input.buttons);
   state.worldSpeedMul = speedMul;
-  state.worldDistance += speedMul;
+  // worldDistance is Q24.8 i32 — convert speedMul (still a float 0.5/1/3) on
+  // the way in. The spawn-period fields in stages.ts are also Q24.8, so the
+  // while-loop comparisons below stay pure i32 vs i32.
+  state.worldDistance += fp(speedMul);
 
   // ---- Plane vertical steering ----
   let dy = 0;

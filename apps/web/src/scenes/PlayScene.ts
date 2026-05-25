@@ -56,6 +56,7 @@ import {
   WORLD_WIDTH,
   createInitialState,
   encodeTranscript,
+  fpToFloat,
   stepMut,
   type GameState,
 } from "@flight/sim";
@@ -881,7 +882,8 @@ export class PlayScene extends Phaser.Scene {
       this.planeSprite.y = this.state.plane.y + Math.sin(this.time.now / 220) * 6;
       this.planeSprite.setRotation(0);
     } else {
-      const scroll = this.state.worldDistance * 1.5;
+      // worldDistance is Q24.8 now; convert back to float for the parallax px math.
+      const scroll = fpToFloat(this.state.worldDistance) * 1.5;
       this.bg.tilePositionX = scroll;
       if (this.bgFading) this.bgFading.tilePositionX = scroll;
       this.planeSprite.y = this.state.plane.y;

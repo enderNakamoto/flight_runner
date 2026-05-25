@@ -87,11 +87,11 @@ export interface GameState {
   stage: number;            // index into STAGE_TABLE
   stageJustChanged: boolean; // transient per-tick render cue; not hashed
   fuel: number;             // 0..FUEL_MAX; ignored while stage.fuelEnabled === false
-  worldSpeedMul: number;    // current tick's horizontal-motion multiplier (0.5 / 1 / 3 by input)
-  worldDistance: number;    // accumulated worldSpeedMul; spawn cadence + bg parallax both gate on this
-  nextPillarDistance: number;
-  nextEnemyDistance: number;
-  nextFuelDistance: number;
+  worldSpeedMul: number;    // current tick's horizontal-motion multiplier (0.5 / 1 / 3 by input) — float
+  worldDistance: number;    // Q24.8 — accumulated worldSpeedMul; spawn cadence + bg parallax gate on this
+  nextPillarDistance: number;  // Q24.8
+  nextEnemyDistance: number;   // Q24.8
+  nextFuelDistance: number;    // Q24.8
   plane: PlaneState;
   pillars: Pillar[];
   nextPillarId: number;
