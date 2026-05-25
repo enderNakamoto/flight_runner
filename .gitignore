@@ -9,6 +9,8 @@ Thumbs.db
 
 # Claude Code local-only state
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/skills/
 
 # Node / TS (will apply once apps/web and packages/sim land)
 node_modules/
@@ -36,3 +38,4 @@ apps/web/tests/screenshots/
 
 # MCP server configs (may contain API tokens)
 .mcp.json
+.vercel
