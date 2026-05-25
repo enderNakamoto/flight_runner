@@ -351,7 +351,9 @@ export function stepMut(state: GameState, input: PlayerInput): void {
 
   // ---- Fuel drain (scales with world speed — going fast costs more) ----
   if (stage.fuelEnabled) {
-    state.fuel -= stage.fuelDrainPerTick * speedMul;
+    // fuel + fuelDrainPerTick are Q24.8; speedMul is still a float scalar, so
+    // the product is a Q24.8 float that we truncate to i32 to stay parity-safe.
+    state.fuel -= (stage.fuelDrainPerTick * speedMul) | 0;
     if (state.fuel <= 0) {
       state.fuel = 0;
       state.gameOver = true;
@@ -509,7 +511,7 @@ export function stepMut(state: GameState, input: PlayerInput): void {
       const tBottom = t.y + FUEL_TOKEN_HITBOX / 2;
       const collide = planeHits({ left: tLeft, right: tRight, top: tTop, bottom: tBottom });
       if (collide) {
-        state.fuel = FUEL_MAX; // top off completely
+        state.fuel = fp(FUEL_MAX); // top off completely (Q24.8)
         state.score++;
         return false; // remove on pickup
       }

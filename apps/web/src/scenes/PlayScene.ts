@@ -547,7 +547,7 @@ export class PlayScene extends Phaser.Scene {
           score: this.state.score,
           gameOver: this.state.gameOver,
           stage: this.state.stage,
-          fuel: this.state.fuel,
+          fuel: fpToFloat(this.state.fuel),
           plane: { y: this.state.plane.y, vy: this.state.plane.vy },
           pillars: this.state.pillars.map((p) => ({ id: p.id, x: p.x, gapY: p.gapY, passed: p.passed })),
           enemies: this.state.enemies.map((e) => ({ id: e.id, kind: e.kind, x: e.x, y: e.y, vx: e.vx, passed: e.passed })),
@@ -1082,7 +1082,7 @@ export class PlayScene extends Phaser.Scene {
       this.fuelBarBg.setVisible(true);
       this.fuelBarFill.setVisible(true);
       this.fuelLabel.setVisible(true);
-      const ratio = Math.max(0, Math.min(1, this.state.fuel / FUEL_MAX));
+      const ratio = Math.max(0, Math.min(1, fpToFloat(this.state.fuel) / FUEL_MAX));
       const fullW = (this.fuelBarBg.width - 4) * ratio;
       this.fuelBarFill.width = fullW;
       const color = ratio > 0.5 ? 0x4caf50 : ratio > 0.2 ? 0xffc107 : 0xff5252;

@@ -35,7 +35,7 @@ export interface StageParams {
   pillarGap: number;
   scrollSpeed: number;
   fuelEnabled: boolean;
-  fuelDrainPerTick: number;
+  fuelDrainPerTick: number;   // Q24.8 fuel units drained per (tick · speedMul=1)
   fuelSpawnPeriod: number;    // Q24.8 distance units between fuel tokens
   enemySpawnPeriod: number;   // Q24.8 distance units between enemy rolls
   enemyMask: number;
@@ -73,7 +73,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
     pillarGap: 0,
     scrollSpeed: 2.1,
     fuelEnabled: true,
-    fuelDrainPerTick: 0.04,
+    fuelDrainPerTick: fp(0.04),
     fuelSpawnPeriod: fp(320),
     enemySpawnPeriod: fp(150),
     enemyMask: ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG | ENEMY_BANNER_PLANE,
@@ -91,7 +91,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
     pillarGap: 220,
     scrollSpeed: 2.3,
     fuelEnabled: true,
-    fuelDrainPerTick: 0.05,
+    fuelDrainPerTick: fp(0.05),
     fuelSpawnPeriod: fp(340),
     enemySpawnPeriod: fp(220),
     enemyMask: ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG | ENEMY_DRONE | ENEMY_BANNER_PLANE,
@@ -109,7 +109,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
     pillarGap: 200,
     scrollSpeed: 2.5,
     fuelEnabled: true,
-    fuelDrainPerTick: 0.06,
+    fuelDrainPerTick: fp(0.06),
     fuelSpawnPeriod: fp(450),
     enemySpawnPeriod: fp(180),
     enemyMask: ENEMY_DRONE | ENEMY_JET | ENEMY_BANNER_PLANE,
@@ -127,7 +127,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
     pillarGap: 180,
     scrollSpeed: 2.7,
     fuelEnabled: true,
-    fuelDrainPerTick: 0.07,
+    fuelDrainPerTick: fp(0.07),
     fuelSpawnPeriod: fp(700),
     enemySpawnPeriod: fp(140),
     enemyMask: ENEMY_DRONE | ENEMY_JET | ENEMY_UFO | ENEMY_BANNER_PLANE,

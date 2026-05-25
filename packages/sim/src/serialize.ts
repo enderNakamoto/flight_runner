@@ -51,9 +51,9 @@ export function serializeState(state: GameState, reuse?: Uint8Array): Uint8Array
     | ((state.gameOverReason & 0xff) << 8)
     | ((state.stage & 0xff) << 16),
   );
-  wFp(state.fuel);
-  // worldDistance + the three nextXDistance fields are already Q24.8 (Phase
-  // 3 world-scroll slice); write them as i32 directly, no second shift.
+  // fuel + worldDistance + the three nextXDistance fields are already Q24.8
+  // (Phase 3 fuel + world-scroll slices); write as i32, no second shift.
+  wI32(state.fuel);
   wI32(state.worldDistance);
   wI32(state.nextPillarDistance);
   wI32(state.nextEnemyDistance);
