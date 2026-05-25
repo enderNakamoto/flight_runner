@@ -267,6 +267,10 @@ export class PlayScene extends Phaser.Scene {
     this.seed = this.makeSeed();
     this.state = createInitialState(this.seed, startStageFromUrl());
     this.accumulator = 0;
+    // Reset transcript capture for the new run. Phaser reuses the scene
+    // instance across scene.restart(), so the class-field initializer only
+    // ran the first time — without this, runs concatenate across restarts.
+    this.transcriptLen = 0;
     // Skip the intro for stage jumps via ?stage=N and for test runs — the
     // briefing is only shown for fresh Stage-Common starts a real player sees.
     this.phase =
