@@ -10,6 +10,7 @@
 pub mod constants;
 pub mod fp;
 pub mod prng;
+pub mod serialize;
 pub mod stages;
 pub mod state;
 pub mod types;
