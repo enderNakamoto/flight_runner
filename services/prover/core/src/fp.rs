@@ -18,9 +18,10 @@ pub const FP_SHIFT: i32 = 8;
 pub const FP_ONE: i32 = 1 << FP_SHIFT;          // 256
 pub const FP_HALF: i32 = 1 << (FP_SHIFT - 1);   // 128
 
-/// Float → Q24.8. Truncates the fractional part toward zero.
+/// Float → Q24.8. Truncates the fractional part toward zero. `const` so it
+/// can build the per-stage tables at compile time.
 #[inline]
-pub fn fp(x: f64) -> i32 {
+pub const fn fp(x: f64) -> i32 {
     (x * FP_ONE as f64) as i32 // `as i32` truncates toward zero, matching `| 0`.
 }
 

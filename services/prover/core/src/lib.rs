@@ -7,6 +7,9 @@
 //! Modules land one slice at a time; each new module gets its own commit and
 //! must keep the parity test passing. First slice: `fp` (the Q24.8 toolbelt).
 
+pub mod constants;
 pub mod fp;
 pub mod prng;
+pub mod stages;
+pub mod state;
 pub mod types;
