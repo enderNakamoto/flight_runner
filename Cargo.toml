@@ -1,0 +1,17 @@
+# Top-level Cargo workspace. The TS sim still lives under packages/sim/ via
+# the pnpm workspace; this file is for the Rust mirror that the zkVM guest
+# will eventually call into.
+[workspace]
+resolver = "2"
+members = [
+  "services/prover/core",
+]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.80"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.lints.rust]
+unused_must_use = "deny"
