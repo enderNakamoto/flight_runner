@@ -293,7 +293,7 @@ export class PlayScene extends Phaser.Scene {
     // RIGHT so the trail attaches on the LEFT/tail side; source already has
     // the dense puff on the right which lines up without flipping.
     this.planeSmokeSprite = this.add
-      .sprite(PLANE_X - PLANE_DISPLAY_W / 2, this.state.plane.y, "smoke_drift")
+      .sprite(PLANE_X - PLANE_DISPLAY_W / 2, fpToFloat(this.state.plane.y), "smoke_drift")
       .setDepth(3)
       .setAlpha(0);
     this.planeSmokeSprite.setDisplaySize(100, 100);
@@ -301,7 +301,7 @@ export class PlayScene extends Phaser.Scene {
 
     // Plane below enemies/missiles so a colliding entity is visible at the
     // moment of game-over instead of being hidden behind the 256×128 plane art.
-    this.planeSprite = this.add.image(PLANE_X, this.state.plane.y, "plane").setDepth(4);
+    this.planeSprite = this.add.image(PLANE_X, fpToFloat(this.state.plane.y), "plane").setDepth(4);
     this.planeSprite.setDisplaySize(PLANE_DISPLAY_W, PLANE_DISPLAY_H);
 
     this.scoreText = this.add
@@ -548,11 +548,11 @@ export class PlayScene extends Phaser.Scene {
           gameOver: this.state.gameOver,
           stage: this.state.stage,
           fuel: fpToFloat(this.state.fuel),
-          plane: { y: this.state.plane.y, vy: this.state.plane.vy },
-          pillars: this.state.pillars.map((p) => ({ id: p.id, x: p.x, gapY: p.gapY, passed: p.passed })),
-          enemies: this.state.enemies.map((e) => ({ id: e.id, kind: e.kind, x: e.x, y: e.y, vx: e.vx, passed: e.passed })),
-          missiles: this.state.missiles.map((m) => ({ id: m.id, tier: m.tier, frame: m.frame, x: m.x, y: m.y, vx: m.vx })),
-          fuelTokens: this.state.fuelTokens.map((t) => ({ id: t.id, x: t.x, y: t.y })),
+          plane: { y: fpToFloat(this.state.plane.y), vy: fpToFloat(this.state.plane.vy) },
+          pillars: this.state.pillars.map((p) => ({ id: p.id, x: fpToFloat(p.x), gapY: fpToFloat(p.gapY), passed: p.passed })),
+          enemies: this.state.enemies.map((e) => ({ id: e.id, kind: e.kind, x: fpToFloat(e.x), y: fpToFloat(e.y), vx: fpToFloat(e.vx), passed: e.passed })),
+          missiles: this.state.missiles.map((m) => ({ id: m.id, tier: m.tier, frame: m.frame, x: fpToFloat(m.x), y: fpToFloat(m.y), vx: fpToFloat(m.vx) })),
+          fuelTokens: this.state.fuelTokens.map((t) => ({ id: t.id, x: fpToFloat(t.x), y: fpToFloat(t.y) })),
           best: this.best,
         }),
         constants: () => ({
@@ -877,17 +877,19 @@ export class PlayScene extends Phaser.Scene {
     // Backgrounds scroll using the seamless mirror-composed textures built in
     // BootScene; scroll speed follows the player's throttle so ← / → feels
     // like the world is dragging by.
+    const planeYpx = fpToFloat(this.state.plane.y);
+    const planeVypx = fpToFloat(this.state.plane.vy);
     if (this.phase === "ready") {
       this.bg.tilePositionX += delta * 0.04;
-      this.planeSprite.y = this.state.plane.y + Math.sin(this.time.now / 220) * 6;
+      this.planeSprite.y = planeYpx + Math.sin(this.time.now / 220) * 6;
       this.planeSprite.setRotation(0);
     } else {
       // worldDistance is Q24.8 now; convert back to float for the parallax px math.
       const scroll = fpToFloat(this.state.worldDistance) * 1.5;
       this.bg.tilePositionX = scroll;
       if (this.bgFading) this.bgFading.tilePositionX = scroll;
-      this.planeSprite.y = this.state.plane.y;
-      this.planeSprite.setRotation(Phaser.Math.Clamp(this.state.plane.vy / 12, -0.45, 0.45));
+      this.planeSprite.y = planeYpx;
+      this.planeSprite.setRotation(Phaser.Math.Clamp(planeVypx / 12, -0.45, 0.45));
     }
 
     // Plane smoke trail — anchored to plane tail (left side, plane faces
@@ -908,17 +910,19 @@ export class PlayScene extends Phaser.Scene {
     const seenPillars = new Set<number>();
     for (const p of this.state.pillars) {
       seenPillars.add(p.id);
+      const px = fpToFloat(p.x);
+      const pGapY = fpToFloat(p.gapY);
       let sprites = this.pillarSprites.get(p.id);
       if (!sprites) {
-        const top = this.add.image(p.x + PILLAR_WIDTH / 2, p.gapY - PILLAR_GAP / 2, "top_pillar").setOrigin(0.5, 1).setDepth(3);
-        top.setDisplaySize(PILLAR_WIDTH, p.gapY - PILLAR_GAP / 2);
-        const bottom = this.add.image(p.x + PILLAR_WIDTH / 2, p.gapY + PILLAR_GAP / 2, "bottom_pillar").setOrigin(0.5, 0).setDepth(3);
-        bottom.setDisplaySize(PILLAR_WIDTH, WORLD_HEIGHT - (p.gapY + PILLAR_GAP / 2));
+        const top = this.add.image(px + PILLAR_WIDTH / 2, pGapY - PILLAR_GAP / 2, "top_pillar").setOrigin(0.5, 1).setDepth(3);
+        top.setDisplaySize(PILLAR_WIDTH, pGapY - PILLAR_GAP / 2);
+        const bottom = this.add.image(px + PILLAR_WIDTH / 2, pGapY + PILLAR_GAP / 2, "bottom_pillar").setOrigin(0.5, 0).setDepth(3);
+        bottom.setDisplaySize(PILLAR_WIDTH, WORLD_HEIGHT - (pGapY + PILLAR_GAP / 2));
         sprites = { top, bottom };
         this.pillarSprites.set(p.id, sprites);
       }
-      sprites.top.x = p.x + PILLAR_WIDTH / 2;
-      sprites.bottom.x = p.x + PILLAR_WIDTH / 2;
+      sprites.top.x = px + PILLAR_WIDTH / 2;
+      sprites.bottom.x = px + PILLAR_WIDTH / 2;
     }
     for (const [id, sprites] of this.pillarSprites) {
       if (!seenPillars.has(id)) {
@@ -931,10 +935,12 @@ export class PlayScene extends Phaser.Scene {
     const seenEnemies = new Set<number>();
     for (const e of this.state.enemies) {
       seenEnemies.add(e.id);
+      const ex = fpToFloat(e.x);
+      const ey = fpToFloat(e.y);
       const spec = ENEMY_SPEC[e.kind as EnemyKind];
       let sprite = this.enemySprites.get(e.id);
       if (!sprite) {
-        sprite = this.add.sprite(e.x, e.y, spec.texture).setDepth(5);
+        sprite = this.add.sprite(ex, ey, spec.texture).setDepth(5);
         // Bird spritesheets are square (64x64 / 96x96) with the bird centered
         // and proportional whitespace — stretching to the rectangular display
         // dims would pancake them, so use displayW for both axes. Hitboxes are
@@ -948,7 +954,7 @@ export class PlayScene extends Phaser.Scene {
         else if (e.kind === EnemyKind.BannerPlane) sprite.play("propeller_spin");
         this.enemySprites.set(e.id, sprite);
       }
-      sprite.x = e.x; sprite.y = e.y;
+      sprite.x = ex; sprite.y = ey;
 
       // Banner-tow trail — SENTINEL.XYZ banner pulled behind the propeller
       // plane via a short cord. Plane faces left (moving left), so the banner
@@ -975,10 +981,10 @@ export class PlayScene extends Phaser.Scene {
           parts = { cord, banner, text };
           this.bannerParts.set(e.id, parts);
         }
-        const tailX = e.x + spec.displayW / 2 - 8; // 8 px inside fuselage so the cord origin reads as attached
-        const droopY = e.y + 14;
+        const tailX = ex + spec.displayW / 2 - 8; // 8 px inside fuselage so the cord origin reads as attached
+        const droopY = ey + 14;
         parts.cord.x = tailX + 14;
-        parts.cord.y = (e.y + droopY) / 2;
+        parts.cord.y = (ey + droopY) / 2;
         parts.banner.x = tailX + 28 + 75; // cord length + half banner width
         parts.banner.y = droopY;
         parts.text.x = parts.banner.x;
@@ -990,13 +996,13 @@ export class PlayScene extends Phaser.Scene {
       if (e.kind === EnemyKind.Jet) {
         let plume = this.enemyPlumes.get(e.id);
         if (!plume) {
-          plume = this.add.sprite(e.x, e.y, "plume_flicker").setDepth(4).setFlipX(true);
+          plume = this.add.sprite(ex, ey, "plume_flicker").setDepth(4).setFlipX(true);
           plume.setDisplaySize(70, 70);
           plume.play("plume_flicker");
           this.enemyPlumes.set(e.id, plume);
         }
-        plume.x = e.x + spec.displayW / 2 - 8;
-        plume.y = e.y;
+        plume.x = ex + spec.displayW / 2 - 8;
+        plume.y = ey;
       }
     }
     for (const [id, sprite] of this.enemySprites) {
@@ -1019,27 +1025,29 @@ export class PlayScene extends Phaser.Scene {
     const seenMissiles = new Set<number>();
     for (const m of this.state.missiles) {
       seenMissiles.add(m.id);
+      const mx = fpToFloat(m.x);
+      const my = fpToFloat(m.y);
       let sprite = this.missileSprites.get(m.id);
       if (!sprite) {
-        sprite = this.add.image(m.x, m.y, "missiles", m.frame).setDepth(5);
+        sprite = this.add.image(mx, my, "missiles", m.frame).setDepth(5);
         sprite.setDisplaySize(MISSILE_DISPLAY_W, MISSILE_DISPLAY_H);
         // Source missiles in the spritesheet already face LEFT (nose left,
         // exhaust right), which matches their leftward motion. assets.json
         // incorrectly says "facing: right" — don't flip.
         this.missileSprites.set(m.id, sprite);
       }
-      sprite.x = m.x; sprite.y = m.y;
+      sprite.x = mx; sprite.y = my;
 
       // Missile exhaust plume — same orientation as jets.
       let plume = this.missilePlumes.get(m.id);
       if (!plume) {
-        plume = this.add.sprite(m.x, m.y, "plume_flicker").setDepth(4).setFlipX(true);
+        plume = this.add.sprite(mx, my, "plume_flicker").setDepth(4).setFlipX(true);
         plume.setDisplaySize(34, 34);
         plume.play("plume_flicker");
         this.missilePlumes.set(m.id, plume);
       }
-      plume.x = m.x + MISSILE_DISPLAY_W / 2 - 4;
-      plume.y = m.y;
+      plume.x = mx + MISSILE_DISPLAY_W / 2 - 4;
+      plume.y = my;
     }
     for (const [id, sprite] of this.missileSprites) {
       if (!seenMissiles.has(id)) {
@@ -1054,16 +1062,18 @@ export class PlayScene extends Phaser.Scene {
     const seenTokens = new Set<number>();
     for (const t of this.state.fuelTokens) {
       seenTokens.add(t.id);
+      const tx = fpToFloat(t.x);
+      const ty = fpToFloat(t.y);
       let sprite = this.fuelTokenSprites.get(t.id);
       if (!sprite) {
-        sprite = this.add.image(t.x, t.y, "fuel_token").setDepth(4);
+        sprite = this.add.image(tx, ty, "fuel_token").setDepth(4);
         sprite.setDisplaySize(FUEL_TOKEN_DISPLAY, FUEL_TOKEN_DISPLAY);
         // Light-blue glow so the gold coin pops against the orange/red sunset
         // and dusk backgrounds where the token's own colour blends in.
         sprite.preFX?.addGlow(0x80c8ff, 6, 0, false, 0.6, 8);
         this.fuelTokenSprites.set(t.id, sprite);
       }
-      sprite.x = t.x; sprite.y = t.y;
+      sprite.x = tx; sprite.y = ty;
       // Spin animation — flip across the vertical axis. scaleX must remain
       // proportional to the base display size; the source PNG is 1254×1254
       // so the resting scale is FUEL_TOKEN_DISPLAY / 1254, not 1.
@@ -1143,16 +1153,19 @@ export class PlayScene extends Phaser.Scene {
 
     const alive = !this.state.gameOver;
     g.lineStyle(2, alive ? 0x00ff00 : 0xff0000, 1);
+    const planeY = fpToFloat(this.state.plane.y);
     for (const r of PLANE_HITBOX_PARTS) {
       const cx = PLANE_X + r.offsetX;
-      const cy = this.state.plane.y + r.offsetY;
+      const cy = planeY + r.offsetY;
       g.strokeRect(cx - r.w / 2, cy - r.h / 2, r.w, r.h);
     }
 
     const pInsetX = (PILLAR_WIDTH - PILLAR_HITBOX_W) / 2;
     for (const p of this.state.pillars) {
-      const visGapTop = p.gapY - PILLAR_GAP / 2;
-      const visGapBottom = p.gapY + PILLAR_GAP / 2;
+      const px = fpToFloat(p.x);
+      const pGapY = fpToFloat(p.gapY);
+      const visGapTop = pGapY - PILLAR_GAP / 2;
+      const visGapBottom = pGapY + PILLAR_GAP / 2;
       const topPillarH = visGapTop;
       const botPillarH = WORLD_HEIGHT - visGapBottom;
       const topInset = (topPillarH * PILLAR_TOP_GAP_PAD_SRC) / PILLAR_SRC_H;
@@ -1160,32 +1173,38 @@ export class PlayScene extends Phaser.Scene {
       const hitGapTop = visGapTop - topInset;
       const hitGapBottom = visGapBottom + botInset;
       g.lineStyle(1, 0xffffff, 0.25);
-      g.strokeRect(p.x, 0, PILLAR_WIDTH, visGapTop);
-      g.strokeRect(p.x, visGapBottom, PILLAR_WIDTH, WORLD_HEIGHT - visGapBottom);
+      g.strokeRect(px, 0, PILLAR_WIDTH, visGapTop);
+      g.strokeRect(px, visGapBottom, PILLAR_WIDTH, WORLD_HEIGHT - visGapBottom);
       g.lineStyle(2, 0xffd400, 1);
-      g.strokeRect(p.x + pInsetX, 0, PILLAR_HITBOX_W, hitGapTop);
-      g.strokeRect(p.x + pInsetX, hitGapBottom, PILLAR_HITBOX_W, WORLD_HEIGHT - hitGapBottom);
+      g.strokeRect(px + pInsetX, 0, PILLAR_HITBOX_W, hitGapTop);
+      g.strokeRect(px + pInsetX, hitGapBottom, PILLAR_HITBOX_W, WORLD_HEIGHT - hitGapBottom);
       g.lineStyle(1, 0x00e5ff, 0.7);
-      g.strokeRect(p.x + pInsetX, hitGapTop, PILLAR_HITBOX_W, hitGapBottom - hitGapTop);
+      g.strokeRect(px + pInsetX, hitGapTop, PILLAR_HITBOX_W, hitGapBottom - hitGapTop);
     }
 
     g.lineStyle(2, 0xff4dff, 1);
     for (const e of this.state.enemies) {
+      const ex = fpToFloat(e.x);
+      const ey = fpToFloat(e.y);
       const spec = ENEMY_SPEC[e.kind as EnemyKind];
-      g.strokeRect(e.x - spec.hitboxW / 2, e.y - spec.hitboxH / 2, spec.hitboxW, spec.hitboxH);
+      g.strokeRect(ex - spec.hitboxW / 2, ey - spec.hitboxH / 2, spec.hitboxW, spec.hitboxH);
       g.lineStyle(1, 0xffffff, 0.2);
-      g.strokeRect(e.x - spec.displayW / 2, e.y - spec.displayH / 2, spec.displayW, spec.displayH);
+      g.strokeRect(ex - spec.displayW / 2, ey - spec.displayH / 2, spec.displayW, spec.displayH);
       g.lineStyle(2, 0xff4dff, 1);
     }
 
     g.lineStyle(2, 0xff8800, 1);
     for (const m of this.state.missiles) {
-      g.strokeRect(m.x - MISSILE_HITBOX_W / 2, m.y - MISSILE_HITBOX_H / 2, MISSILE_HITBOX_W, MISSILE_HITBOX_H);
+      const mx = fpToFloat(m.x);
+      const my = fpToFloat(m.y);
+      g.strokeRect(mx - MISSILE_HITBOX_W / 2, my - MISSILE_HITBOX_H / 2, MISSILE_HITBOX_W, MISSILE_HITBOX_H);
     }
 
     g.lineStyle(2, 0x00ff88, 1);
     for (const t of this.state.fuelTokens) {
-      g.strokeRect(t.x - FUEL_TOKEN_HITBOX / 2, t.y - FUEL_TOKEN_HITBOX / 2, FUEL_TOKEN_HITBOX, FUEL_TOKEN_HITBOX);
+      const tx = fpToFloat(t.x);
+      const ty = fpToFloat(t.y);
+      g.strokeRect(tx - FUEL_TOKEN_HITBOX / 2, ty - FUEL_TOKEN_HITBOX / 2, FUEL_TOKEN_HITBOX, FUEL_TOKEN_HITBOX);
     }
   }
 

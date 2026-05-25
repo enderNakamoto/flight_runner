@@ -40,8 +40,8 @@ export interface StageParams {
   enemySpawnPeriod: number;   // Q24.8 distance units between enemy rolls
   enemyMask: number;
   birdTaper: { startScore: number; endScore: number } | null;
-  birdSmallSpeed: number;
-  birdBigSpeed: number;
+  birdSmallSpeed: number;     // Q24.8 px/tick
+  birdBigSpeed: number;       // Q24.8 px/tick
   missileTierMask: number;
   missileMaxInFlight: number;
   visibilityFlicker: boolean;
@@ -60,7 +60,7 @@ export const STAGE_TABLE: readonly StageParams[] = [
     enemySpawnPeriod: fp(180),
     enemyMask: ENEMY_BIRD_SMALL | ENEMY_BANNER_PLANE,
     birdTaper: null,
-    birdSmallSpeed: 3.6,
+    birdSmallSpeed: fp(3.6),
     birdBigSpeed: 0,
     missileTierMask: 0,
     missileMaxInFlight: 0,
@@ -78,8 +78,8 @@ export const STAGE_TABLE: readonly StageParams[] = [
     enemySpawnPeriod: fp(150),
     enemyMask: ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG | ENEMY_BANNER_PLANE,
     birdTaper: null,
-    birdSmallSpeed: 4.4,
-    birdBigSpeed: 2.6,
+    birdSmallSpeed: fp(4.4),
+    birdBigSpeed: fp(2.6),
     missileTierMask: 0,
     missileMaxInFlight: 0,
     visibilityFlicker: false,
@@ -96,8 +96,8 @@ export const STAGE_TABLE: readonly StageParams[] = [
     enemySpawnPeriod: fp(220),
     enemyMask: ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG | ENEMY_DRONE | ENEMY_BANNER_PLANE,
     birdTaper: { startScore: 37, endScore: 125 },
-    birdSmallSpeed: 4.4,
-    birdBigSpeed: 2.6,
+    birdSmallSpeed: fp(4.4),
+    birdBigSpeed: fp(2.6),
     missileTierMask: MISSILE_COMMON,
     missileMaxInFlight: 1,
     visibilityFlicker: false,

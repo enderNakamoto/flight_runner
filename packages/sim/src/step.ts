@@ -58,8 +58,22 @@ import {
   WORLD_HEIGHT,
   WORLD_WIDTH,
 } from "./constants.js";
-import { fp, fpMul, fpToFloat } from "./fp.js";
+import { fp, fpFloor, fpMul } from "./fp.js";
 import { prngNextU32, prngRange } from "./prng.js";
+
+// Pre-fp'd module-scope constants — coordinate / dimension literals that the
+// sim uses every frame. Kept out of the hot path so each fp() runs once.
+const PLANE_X_FP = fp(PLANE_X);
+const WORLD_HEIGHT_FP = fp(WORLD_HEIGHT);
+const PILLAR_WIDTH_FP = fp(PILLAR_WIDTH);
+const PILLAR_GAP_HALF_FP = fp(PILLAR_GAP) >> 1;
+const PILLAR_INSET_X_FP = fp((PILLAR_WIDTH - PILLAR_HITBOX_W) / 2);
+const ENEMY_SPAWN_X_FP = fp(WORLD_WIDTH + ENEMY_SPAWN_X_MARGIN);
+const PILLAR_SPAWN_X_FP = fp(WORLD_WIDTH + PILLAR_WIDTH);
+const MISSILE_HALF_W_FP = fp(MISSILE_DISPLAY_W) >> 1;
+const MISSILE_HITBOX_HALF_W_FP = fp(MISSILE_HITBOX_W) >> 1;
+const MISSILE_HITBOX_HALF_H_FP = fp(MISSILE_HITBOX_H) >> 1;
+const FUEL_TOKEN_HALF_FP = fp(FUEL_TOKEN_HITBOX) >> 1;
 import {
   ENEMY_BANNER_PLANE,
   ENEMY_BIRD_BIG,
@@ -236,11 +250,11 @@ function spawnEnemy(state: GameState, stage: StageParams): void {
   state.enemies.push({
     id: state.nextEnemyId++,
     kind,
-    x: WORLD_WIDTH + ENEMY_SPAWN_X_MARGIN,
-    y,
+    x: ENEMY_SPAWN_X_FP,
+    y: fp(y),
     vx: -speed,
     spawnTick: state.tick,
-    spawnY: y,
+    spawnY: fp(y),
     nextFireTick: state.tick + fireDelay,
     passed: false,
   });
@@ -264,8 +278,10 @@ function pickEnemyY(
   }
   const lastPillar = state.pillars[state.pillars.length - 1]!;
   const CLEARANCE = 40; // px above/below the gap to also avoid
-  const gapTopAvoid = lastPillar.gapY - PILLAR_GAP / 2 - CLEARANCE;
-  const gapBotAvoid = lastPillar.gapY + PILLAR_GAP / 2 + CLEARANCE;
+  // Local math runs in int px (yMin/yMax come in as int px); convert gapY back.
+  const lastGapY = fpFloor(lastPillar.gapY);
+  const gapTopAvoid = lastGapY - PILLAR_GAP / 2 - CLEARANCE;
+  const gapBotAvoid = lastGapY + PILLAR_GAP / 2 + CLEARANCE;
 
   const upperHi = Math.min(yMax, gapTopAvoid);
   const lowerLo = Math.max(yMin, gapBotAvoid);
@@ -288,8 +304,8 @@ function spawnFuelToken(state: GameState): void {
   const y = Math.floor(prngRange(state.rng, ENEMY_SPAWN_Y_MIN + 30, ENEMY_SPAWN_Y_MAX - 30));
   state.fuelTokens.push({
     id: state.nextFuelTokenId++,
-    x: WORLD_WIDTH + ENEMY_SPAWN_X_MARGIN,
-    y,
+    x: ENEMY_SPAWN_X_FP,
+    y: fp(y),
   });
 }
 
@@ -299,7 +315,7 @@ function maybeFireMissiles(state: GameState, stage: StageParams): void {
 
   for (const e of state.enemies) {
     if (e.kind !== EnemyKind.Drone && e.kind !== EnemyKind.Jet) continue;
-    if (e.x <= PLANE_X) continue; // only fire while still ahead of the plane
+    if (e.x <= PLANE_X_FP) continue; // only fire while still ahead of the plane
     if (state.tick < e.nextFireTick) continue;
     if (state.missiles.length >= stage.missileMaxInFlight) break;
 
@@ -309,7 +325,7 @@ function maybeFireMissiles(state: GameState, stage: StageParams): void {
       id: state.nextMissileId++,
       tier: choice.tier,
       frame: choice.frame,
-      x: e.x - MISSILE_DISPLAY_W / 2,
+      x: e.x - MISSILE_HALF_W_FP,
       y: e.y,
       vx: -MISSILE_SPEED,
     });
@@ -324,11 +340,9 @@ export function stepMut(state: GameState, input: PlayerInput): void {
   state.stageJustChanged = false;
 
   // ---- World scroll speed ----
-  // speedMul is Q24.8 (128/256/768 for 0.5/1/3) — worldDistance accumulates
-  // it directly, fuel drain uses fpMul, entity motion still wants a float
-  // scalar so we cache the float view once.
+  // speedMul is Q24.8 — everything (worldDistance, fuel, entity motion)
+  // consumes it via i32 add or fpMul. The frame is fully integer arithmetic.
   const speedMul = computeSpeedMul(input.buttons);
-  const speedMulF = fpToFloat(speedMul);
   state.worldSpeedMul = speedMul;
   state.worldDistance += speedMul;
 
@@ -344,7 +358,7 @@ export function stepMut(state: GameState, input: PlayerInput): void {
     state.gameOverReason = GameOverReason.WorldTop;
     return;
   }
-  if (state.plane.y > WORLD_HEIGHT) {
+  if (state.plane.y > WORLD_HEIGHT_FP) {
     state.gameOver = true;
     state.gameOverReason = GameOverReason.WorldBottom;
     return;
@@ -372,8 +386,8 @@ export function stepMut(state: GameState, input: PlayerInput): void {
       const gapY = Math.floor(prngRange(state.rng, PILLAR_GAP_MIN_Y, PILLAR_GAP_MAX_Y));
       state.pillars.push({
         id: state.nextPillarId++,
-        x: WORLD_WIDTH + PILLAR_WIDTH,
-        gapY,
+        x: PILLAR_SPAWN_X_FP,
+        gapY: fp(gapY),
         passed: false,
       });
       state.nextPillarDistance += stage.pillarSpawnPeriod;
@@ -396,122 +410,122 @@ export function stepMut(state: GameState, input: PlayerInput): void {
   // ---- Plane multi-rect hitbox ----
   // Three rectangles approximate the plane silhouette: tail fin (back-upper),
   // body + cockpit (centre), and engine pods/landing gear (below). Collision
-  // is the OR of any part overlapping an obstacle rect.
+  // is the OR of any part overlapping an obstacle rect. Pre-compute each
+  // part's Q24.8 AABB once per frame so per-entity hit-tests are pure compares.
   const planeY = state.plane.y;
+  const planeRects: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+  for (const r of PLANE_HITBOX_PARTS) {
+    const cx = PLANE_X_FP + fp(r.offsetX);
+    const cy = planeY + fp(r.offsetY);
+    const hw = fp(r.w) >> 1;
+    const hh = fp(r.h) >> 1;
+    planeRects.push({ left: cx - hw, right: cx + hw, top: cy - hh, bottom: cy + hh });
+  }
   function planeHits(aabb: { left: number; right: number; top: number; bottom: number }): boolean {
-    for (const r of PLANE_HITBOX_PARTS) {
-      const cx = PLANE_X + r.offsetX;
-      const cy = planeY + r.offsetY;
-      const left = cx - r.w / 2;
-      const right = cx + r.w / 2;
-      const top = cy - r.h / 2;
-      const bottom = cy + r.h / 2;
-      if (right > aabb.left && left < aabb.right && bottom > aabb.top && top < aabb.bottom) {
+    for (const part of planeRects) {
+      if (part.right > aabb.left && part.left < aabb.right && part.bottom > aabb.top && part.top < aabb.bottom) {
         return true;
       }
     }
     return false;
   }
-  // The bounding-AABB is still useful for cheap "is anything possibly near?"
-  // short-circuits, but the spawn density is low enough that the per-part
-  // loop above is fine to run on every entity.
 
   // ---- Pillars ----
-  const pillarInsetX = (PILLAR_WIDTH - PILLAR_HITBOX_W) / 2;
   for (const p of state.pillars) {
-    p.x -= PILLAR_SCROLL_SPEED * speedMulF;
-    if (!p.passed && p.x + PILLAR_WIDTH < PLANE_X) {
+    p.x -= fpMul(PILLAR_SCROLL_SPEED, speedMul);
+    if (!p.passed && p.x + PILLAR_WIDTH_FP < PLANE_X_FP) {
       p.passed = true;
       state.score++;
     }
-    const pillarLeft = p.x + pillarInsetX;
-    const pillarRight = p.x + PILLAR_WIDTH - pillarInsetX;
-    const visGapTop = p.gapY - PILLAR_GAP / 2;
-    const visGapBottom = p.gapY + PILLAR_GAP / 2;
+    const pillarLeft = p.x + PILLAR_INSET_X_FP;
+    const pillarRight = p.x + PILLAR_WIDTH_FP - PILLAR_INSET_X_FP;
+    const visGapTop = p.gapY - PILLAR_GAP_HALF_FP;
+    const visGapBottom = p.gapY + PILLAR_GAP_HALF_FP;
     const topPillarH = visGapTop;
-    const botPillarH = WORLD_HEIGHT - visGapBottom;
-    const topInset = (topPillarH * PILLAR_TOP_GAP_PAD_SRC) / PILLAR_SRC_H;
-    const botInset = (botPillarH * PILLAR_BOT_GAP_PAD_SRC) / PILLAR_SRC_H;
+    const botPillarH = WORLD_HEIGHT_FP - visGapBottom;
+    // Proportional inset: Q24.8 numerator × int / int → Q24.8 (truncate to i32).
+    const topInset = ((topPillarH * PILLAR_TOP_GAP_PAD_SRC) / PILLAR_SRC_H) | 0;
+    const botInset = ((botPillarH * PILLAR_BOT_GAP_PAD_SRC) / PILLAR_SRC_H) | 0;
     const hitGapTop = visGapTop - topInset;
     const hitGapBottom = visGapBottom + botInset;
     if (
       planeHits({ left: pillarLeft, right: pillarRight, top: 0, bottom: hitGapTop }) ||
-      planeHits({ left: pillarLeft, right: pillarRight, top: hitGapBottom, bottom: WORLD_HEIGHT })
+      planeHits({ left: pillarLeft, right: pillarRight, top: hitGapBottom, bottom: WORLD_HEIGHT_FP })
     ) {
       state.gameOver = true;
       state.gameOverReason = GameOverReason.Pillar;
       return;
     }
   }
-  if (state.pillars.length > 0 && state.pillars[0]!.x + PILLAR_WIDTH < 0) {
+  if (state.pillars.length > 0 && state.pillars[0]!.x + PILLAR_WIDTH_FP < 0) {
     state.pillars.shift();
   }
 
   // ---- Enemies ----
   for (const e of state.enemies) {
     if (e.kind === EnemyKind.Ufo) {
-      // Triangle-wave zigzag: piecewise-linear over four quarter-periods,
-      // 0 → +A → 0 → −A → 0. Same shape as the previous sine, no transcendental
-      // — keeps the motion convertible to Q24.8 without a sine LUT.
+      // Triangle-wave zigzag in Q24.8: piecewise-linear over four quarter-
+      // periods, 0 → +A → 0 → −A → 0. t/Q is dimensionless, A is fp'd → offset
+      // lands in Q24.8 and is added to e.spawnY directly.
       const P = UFO_ZIGZAG_PERIOD_TICKS;
-      const Q = P >> 2; // quarter period (P is divisible by 4)
-      const A = UFO_ZIGZAG_AMPLITUDE;
+      const Q = P >> 2;
+      const A_FP = fp(UFO_ZIGZAG_AMPLITUDE);
       const t = (state.tick - e.spawnTick) % P;
       let offset: number;
-      if (t < Q)          offset =  (t * A) / Q;             // 0   → +A
-      else if (t < 2 * Q) offset =  ((2 * Q - t) * A) / Q;   // +A  →  0
-      else if (t < 3 * Q) offset = -((t - 2 * Q) * A) / Q;   // 0   → −A
-      else                offset = -((P - t) * A) / Q;       // −A  →  0
+      if (t < Q)          offset =  ((t * A_FP) / Q) | 0;             // 0   → +A
+      else if (t < 2 * Q) offset =  (((2 * Q - t) * A_FP) / Q) | 0;   // +A  →  0
+      else if (t < 3 * Q) offset = -(((t - 2 * Q) * A_FP) / Q) | 0;   // 0   → −A
+      else                offset = -(((P - t) * A_FP) / Q) | 0;       // −A  →  0
       e.y = e.spawnY + offset;
     }
-    e.x += e.vx * speedMulF;
+    e.x += fpMul(e.vx, speedMul);
 
     const dims = enemyDims(e.kind);
-    if (!e.passed && e.x + dims.hitboxW / 2 < PLANE_X) {
+    const eHalfW = fp(dims.hitboxW) >> 1;
+    const eHalfH = fp(dims.hitboxH) >> 1;
+    if (!e.passed && e.x + eHalfW < PLANE_X_FP) {
       e.passed = true;
       // UFO is worth more — it's the boss tier.
       state.score += e.kind === EnemyKind.Ufo ? 5 : 1;
     }
 
-    const eLeft = e.x - dims.hitboxW / 2;
-    const eRight = e.x + dims.hitboxW / 2;
-    const eTop = e.y - dims.hitboxH / 2;
-    const eBottom = e.y + dims.hitboxH / 2;
-    if (planeHits({ left: eLeft, right: eRight, top: eTop, bottom: eBottom })) {
+    if (planeHits({ left: e.x - eHalfW, right: e.x + eHalfW, top: e.y - eHalfH, bottom: e.y + eHalfH })) {
       state.gameOver = true;
       state.gameOverReason = reasonForEnemy(e.kind);
       return;
     }
   }
-  state.enemies = state.enemies.filter((e) => e.x + enemyDims(e.kind).hitboxW / 2 > 0);
+  state.enemies = state.enemies.filter((e) => e.x + (fp(enemyDims(e.kind).hitboxW) >> 1) > 0);
 
   // ---- Missiles ----
   for (const m of state.missiles) {
-    m.x += m.vx * speedMulF;
-    const mLeft = m.x - MISSILE_HITBOX_W / 2;
-    const mRight = m.x + MISSILE_HITBOX_W / 2;
-    const mTop = m.y - MISSILE_HITBOX_H / 2;
-    const mBottom = m.y + MISSILE_HITBOX_H / 2;
-    if (planeHits({ left: mLeft, right: mRight, top: mTop, bottom: mBottom })) {
+    m.x += fpMul(m.vx, speedMul);
+    if (planeHits({
+      left: m.x - MISSILE_HITBOX_HALF_W_FP,
+      right: m.x + MISSILE_HITBOX_HALF_W_FP,
+      top: m.y - MISSILE_HITBOX_HALF_H_FP,
+      bottom: m.y + MISSILE_HITBOX_HALF_H_FP,
+    })) {
       state.gameOver = true;
       state.gameOverReason = GameOverReason.Missile;
       return;
     }
   }
-  state.missiles = state.missiles.filter((m) => m.x + MISSILE_HITBOX_W / 2 > 0);
+  state.missiles = state.missiles.filter((m) => m.x + MISSILE_HITBOX_HALF_W_FP > 0);
 
   // ---- Fuel tokens ----
   if (stage.fuelEnabled) {
     for (const t of state.fuelTokens) {
-      t.x -= FUEL_TOKEN_SCROLL_SPEED * speedMulF;
+      t.x -= fpMul(FUEL_TOKEN_SCROLL_SPEED, speedMul);
     }
     state.fuelTokens = state.fuelTokens.filter((t) => {
-      if (t.x + FUEL_TOKEN_HITBOX / 2 < 0) return false;
-      const tLeft = t.x - FUEL_TOKEN_HITBOX / 2;
-      const tRight = t.x + FUEL_TOKEN_HITBOX / 2;
-      const tTop = t.y - FUEL_TOKEN_HITBOX / 2;
-      const tBottom = t.y + FUEL_TOKEN_HITBOX / 2;
-      const collide = planeHits({ left: tLeft, right: tRight, top: tTop, bottom: tBottom });
+      if (t.x + FUEL_TOKEN_HALF_FP < 0) return false;
+      const collide = planeHits({
+        left: t.x - FUEL_TOKEN_HALF_FP,
+        right: t.x + FUEL_TOKEN_HALF_FP,
+        top: t.y - FUEL_TOKEN_HALF_FP,
+        bottom: t.y + FUEL_TOKEN_HALF_FP,
+      });
       if (collide) {
         state.fuel = fp(FUEL_MAX); // top off completely (Q24.8)
         state.score++;

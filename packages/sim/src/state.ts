@@ -18,7 +18,7 @@ export function createInitialState(seed: number, startStage: Stage = Stage.Commo
     nextPillarDistance: 0,
     nextEnemyDistance: 0,
     nextFuelDistance: 0,
-    plane: { y: PLANE_START_Y, vy: 0 },
+    plane: { y: fp(PLANE_START_Y), vy: 0 },
     pillars: [],
     nextPillarId: 1,
     enemies: [],

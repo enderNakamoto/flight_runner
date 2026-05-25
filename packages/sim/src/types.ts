@@ -12,14 +12,14 @@ export interface PRNGState {
 }
 
 export interface PlaneState {
-  y: number;
-  vy: number;
+  y: number;   // Q24.8 px
+  vy: number;  // Q24.8 px/tick
 }
 
 export interface Pillar {
   id: number;
-  x: number;
-  gapY: number;
+  x: number;     // Q24.8 px
+  gapY: number;  // Q24.8 px — vertical centre of the gap
   passed: boolean;
 }
 
@@ -49,11 +49,11 @@ export const enum GameOverReason {
 export interface Enemy {
   id: number;
   kind: EnemyKind;
-  x: number;
-  y: number;
-  vx: number;       // px/tick, negative = moving left
-  spawnTick: number; // used by UFO zigzag and per-enemy fire cadence
-  spawnY: number;    // anchor for zigzag oscillation
+  x: number;            // Q24.8 px
+  y: number;            // Q24.8 px
+  vx: number;           // Q24.8 px/tick, negative = moving left
+  spawnTick: number;    // used by UFO zigzag and per-enemy fire cadence
+  spawnY: number;       // Q24.8 px — anchor for UFO zigzag
   nextFireTick: number; // first tick at which this enemy may fire a missile
   passed: boolean;
 }
@@ -67,16 +67,16 @@ export const enum MissileTier {
 export interface Missile {
   id: number;
   tier: MissileTier;
-  frame: number; // index 0..11 into the missiles spritesheet
-  x: number;
-  y: number;
-  vx: number;
+  frame: number;  // index 0..11 into the missiles spritesheet
+  x: number;      // Q24.8 px
+  y: number;      // Q24.8 px
+  vx: number;     // Q24.8 px/tick
 }
 
 export interface FuelToken {
   id: number;
-  x: number;
-  y: number;
+  x: number;      // Q24.8 px
+  y: number;      // Q24.8 px
 }
 
 export interface GameState {

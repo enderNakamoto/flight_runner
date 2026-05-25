@@ -1,3 +1,9 @@
+// Phase 3: sizes / dimensions / coordinate literals stay as integer pixels here
+// (human-readable + still used by PlayScene's px-space render code). The sim
+// wraps them in fp() at use; speed constants below are pre-fp'd in place
+// because they're consumed only by the sim.
+import { fp } from "./fp.js";
+
 export const WORLD_WIDTH = 1280;
 export const WORLD_HEIGHT = 720;
 export const TICK_RATE_HZ = 60;
@@ -33,7 +39,7 @@ export const PLANE_HITBOX_W = 240;
 export const PLANE_HITBOX_H = 102;
 export const PLANE_HITBOX_OFFSET_Y = -4;
 
-export const VERT_SPEED = 6;
+export const VERT_SPEED = fp(6);          // Q24.8 px / tick
 
 export const PILLAR_WIDTH = 110;
 export const PILLAR_GAP = 220;
@@ -49,7 +55,7 @@ export const PILLAR_HITBOX_W = 78;
 export const PILLAR_SRC_H = 1536;
 export const PILLAR_TOP_GAP_PAD_SRC = 90; // top_pillar.png: alpha ends 90 px above sprite bottom
 export const PILLAR_BOT_GAP_PAD_SRC = 99; // bottom_pillar.png: alpha starts 99 px below sprite top
-export const PILLAR_SCROLL_SPEED = 3.2;
+export const PILLAR_SCROLL_SPEED = fp(3.2); // Q24.8 px / tick (at speedMul=1)
 export const PILLAR_SPAWN_PERIOD_TICKS = 110;
 export const PILLAR_GAP_MIN_Y = 160;
 export const PILLAR_GAP_MAX_Y = WORLD_HEIGHT - 160;
@@ -73,7 +79,7 @@ export const BANNER_PLANE_DISPLAY_W = 96;
 export const BANNER_PLANE_DISPLAY_H = 96;
 export const BANNER_PLANE_HITBOX_W = 64;
 export const BANNER_PLANE_HITBOX_H = 36;
-export const BANNER_PLANE_SCROLL_SPEED = 2.8;
+export const BANNER_PLANE_SCROLL_SPEED = fp(2.8);
 
 // Enemies spawn just off-screen right and scroll left toward the plane.
 export const ENEMY_SPAWN_X_MARGIN = 80;
@@ -89,14 +95,14 @@ export const FUEL_PICKUP_AMOUNT = 30;
 // Fuel tokens. PNG is 1254×1254 square. Render at 56×56, hit at 44×44.
 export const FUEL_TOKEN_DISPLAY = 56;
 export const FUEL_TOKEN_HITBOX = 44;
-export const FUEL_TOKEN_SCROLL_SPEED = 3.2;
+export const FUEL_TOKEN_SCROLL_SPEED = fp(3.2);
 
 // Drone — slow hover, scrolls left, fires missiles.
 export const DRONE_DISPLAY_W = 90;
 export const DRONE_DISPLAY_H = 44;
 export const DRONE_HITBOX_W = 68;
 export const DRONE_HITBOX_H = 26;
-export const DRONE_SCROLL_SPEED = 1.8;
+export const DRONE_SCROLL_SPEED = fp(1.8);
 export const DRONE_FIRE_PERIOD_TICKS = 210; // one missile every 3.5s (per drone) — was 90
 
 // Jet — fast flyby.
@@ -104,7 +110,7 @@ export const JET_DISPLAY_W = 140;
 export const JET_DISPLAY_H = 64;
 export const JET_HITBOX_W = 108;
 export const JET_HITBOX_H = 38;
-export const JET_SCROLL_SPEED = 5.6;
+export const JET_SCROLL_SPEED = fp(5.6);
 export const JET_FIRE_PERIOD_TICKS = 240; // was 120 — jets pass fast, no need to spam
 
 // UFO — zigzag boss. vy oscillates sinusoidally.
@@ -112,7 +118,7 @@ export const UFO_DISPLAY_W = 130;
 export const UFO_DISPLAY_H = 86;
 export const UFO_HITBOX_W = 96;
 export const UFO_HITBOX_H = 58;
-export const UFO_SCROLL_SPEED = 2.2;
+export const UFO_SCROLL_SPEED = fp(2.2);
 export const UFO_ZIGZAG_AMPLITUDE = 110; // px peak vertical excursion
 // Divisible by 4 so the triangle-wave quarter-period (Q = P/4) is an exact
 // integer — keeps the motion bit-identical once the sim moves to Q24.8.
@@ -123,7 +129,7 @@ export const MISSILE_DISPLAY_W = 58;
 export const MISSILE_DISPLAY_H = 22;
 export const MISSILE_HITBOX_W = 42;
 export const MISSILE_HITBOX_H = 14;
-export const MISSILE_SPEED = 7.5; // px/tick — faster than the world to threaten
+export const MISSILE_SPEED = fp(7.5); // Q24.8 px/tick — faster than the world to threaten
 
 // Mythical-only: lightning flickers visibility briefly every ~8s.
 export const FLICKER_PERIOD_TICKS = 480;
