@@ -442,9 +442,19 @@ export function stepMut(state: GameState, input: PlayerInput): void {
   // ---- Enemies ----
   for (const e of state.enemies) {
     if (e.kind === EnemyKind.Ufo) {
-      // Zigzag — vy oscillates as a deterministic sin of (tick - spawnTick).
-      const phase = ((state.tick - e.spawnTick) / UFO_ZIGZAG_PERIOD_TICKS) * Math.PI * 2;
-      e.y = e.spawnY + Math.sin(phase) * UFO_ZIGZAG_AMPLITUDE;
+      // Triangle-wave zigzag: piecewise-linear over four quarter-periods,
+      // 0 → +A → 0 → −A → 0. Same shape as the previous sine, no transcendental
+      // — keeps the motion convertible to Q24.8 without a sine LUT.
+      const P = UFO_ZIGZAG_PERIOD_TICKS;
+      const Q = P >> 2; // quarter period (P is divisible by 4)
+      const A = UFO_ZIGZAG_AMPLITUDE;
+      const t = (state.tick - e.spawnTick) % P;
+      let offset: number;
+      if (t < Q)          offset =  (t * A) / Q;             // 0   → +A
+      else if (t < 2 * Q) offset =  ((2 * Q - t) * A) / Q;   // +A  →  0
+      else if (t < 3 * Q) offset = -((t - 2 * Q) * A) / Q;   // 0   → −A
+      else                offset = -((P - t) * A) / Q;       // −A  →  0
+      e.y = e.spawnY + offset;
     }
     e.x += e.vx * speedMul;
 

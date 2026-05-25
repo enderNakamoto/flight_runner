@@ -114,7 +114,9 @@ export const UFO_HITBOX_W = 96;
 export const UFO_HITBOX_H = 58;
 export const UFO_SCROLL_SPEED = 2.2;
 export const UFO_ZIGZAG_AMPLITUDE = 110; // px peak vertical excursion
-export const UFO_ZIGZAG_PERIOD_TICKS = 90;
+// Divisible by 4 so the triangle-wave quarter-period (Q = P/4) is an exact
+// integer — keeps the motion bit-identical once the sim moves to Q24.8.
+export const UFO_ZIGZAG_PERIOD_TICKS = 88;
 
 // Missiles. Source sheet is 591×222 per frame.
 export const MISSILE_DISPLAY_W = 58;
