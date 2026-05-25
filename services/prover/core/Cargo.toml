@@ -15,6 +15,9 @@ description = "Deterministic Q24.8 sim for flight_scroll. Mirror of packages/sim
 [dependencies]
 sha2 = "0.10"
 
+[dev-dependencies]
+serde_json = "1"
+
 [[bin]]
 name = "parity"
 path = "src/bin/parity.rs"

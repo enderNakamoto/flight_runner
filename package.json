@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "pnpm --filter @flight/web dev",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "test:parity": "npx -y tsx packages/sim/scripts/run-corpus.ts && npx -y tsx packages/sim/scripts/dump-hashes.ts && cargo test -p flight_scroll_core --test corpus_parity"
   },
   "devDependencies": {
     "typescript": "~5.5.4"

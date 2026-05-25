@@ -1,6 +1,6 @@
 # Progress
 
-**Current phase:** Phase 3 — Deterministic sim + Rust port (parity gate met; corpus expansion pending)
+**Current phase:** Phase 4 — RISC Zero prover (not started). Phase 3 done.
 
 For what each phase is, see [`spec/phases.md`](spec/phases.md).
 For commit-level history, see `git log`.
@@ -10,7 +10,7 @@ For commit-level history, see `git log`.
 | 0 — Initialize | in progress (frontend slice only — Soroban scaffolding deferred to phases 5+) |
 | 1 — Playable MVP | done |
 | 2 — Full gameplay | done (SFX deferred to Phase 8 — no audio assets yet) |
-| 3 — Deterministic sim + Rust port | in progress (TS & Rust bit-identical on 5-transcript corpus; ≥100-corpus target outstanding) |
+| 3 — Deterministic sim + Rust port | done (`pnpm test:parity` — 100-transcript corpus, TS↔Rust chain hashes byte-identical) |
 | 4 — RISC Zero prover (local) | not started |
 | 5 — Soroban contract + wallet | not started |
 | 6 — Relay + worker queue | not started |
@@ -26,4 +26,4 @@ For commit-level history, see `git log`.
 ## Notes
 
 - Phase 2 SFX is parked until Phase 8 — no audio assets in `public/assets/`. The "basic SFX" item from the original Phase 2 scope (engine, score, hit, fuel pickup) lands with the polish/launch pass.
-- Phase 3 parity: the substantive condition (TS & Rust sims byte-identical at every recorded tick) is met. Five real human-played transcripts under `packages/sim/tests/corpus/` round-trip to the same SHA-256 chain hash on both sides. The spec calls for ≥100 transcripts; expansion to that corpus size is purely collection work (synthesized random-input runs + more browser-recorded sessions) — no further sim changes expected.
+- Phase 3 done: 100-transcript corpus under `packages/sim/tests/corpus/` (5 real human-played + 95 deterministic fuzz from `gen-corpus.ts`). `pnpm test:parity` walks the corpus through both TS and Rust sims and asserts per-tick SHA-256 chain hashes match — bit-identical across all 100.
