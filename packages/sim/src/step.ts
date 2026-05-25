@@ -58,7 +58,7 @@ import {
   WORLD_HEIGHT,
   WORLD_WIDTH,
 } from "./constants.js";
-import { fp } from "./fp.js";
+import { fp, fpMul, fpToFloat } from "./fp.js";
 import { prngNextU32, prngRange } from "./prng.js";
 import {
   ENEMY_BANNER_PLANE,
@@ -102,15 +102,17 @@ function reasonForEnemy(kind: EnemyKind): GameOverReason {
   }
 }
 
-const SPEED_SLOW = 0.5;
-const SPEED_FAST = 3.0;
+// World-speed multipliers in Q24.8: 0.5 / 1 / 3 → 128 / 256 / 768.
+const SPEED_SLOW = fp(0.5);
+const SPEED_NORMAL = fp(1);
+const SPEED_FAST = fp(3);
 
 function computeSpeedMul(buttons: number): number {
   const left = (buttons & BTN_LEFT) !== 0;
   const right = (buttons & BTN_RIGHT) !== 0;
   if (left && !right) return SPEED_SLOW;
   if (right && !left) return SPEED_FAST;
-  return 1;
+  return SPEED_NORMAL;
 }
 
 interface EntityDims {
@@ -322,12 +324,13 @@ export function stepMut(state: GameState, input: PlayerInput): void {
   state.stageJustChanged = false;
 
   // ---- World scroll speed ----
+  // speedMul is Q24.8 (128/256/768 for 0.5/1/3) — worldDistance accumulates
+  // it directly, fuel drain uses fpMul, entity motion still wants a float
+  // scalar so we cache the float view once.
   const speedMul = computeSpeedMul(input.buttons);
+  const speedMulF = fpToFloat(speedMul);
   state.worldSpeedMul = speedMul;
-  // worldDistance is Q24.8 i32 — convert speedMul (still a float 0.5/1/3) on
-  // the way in. The spawn-period fields in stages.ts are also Q24.8, so the
-  // while-loop comparisons below stay pure i32 vs i32.
-  state.worldDistance += fp(speedMul);
+  state.worldDistance += speedMul;
 
   // ---- Plane vertical steering ----
   let dy = 0;
@@ -351,9 +354,8 @@ export function stepMut(state: GameState, input: PlayerInput): void {
 
   // ---- Fuel drain (scales with world speed — going fast costs more) ----
   if (stage.fuelEnabled) {
-    // fuel + fuelDrainPerTick are Q24.8; speedMul is still a float scalar, so
-    // the product is a Q24.8 float that we truncate to i32 to stay parity-safe.
-    state.fuel -= (stage.fuelDrainPerTick * speedMul) | 0;
+    // fuel, fuelDrainPerTick, speedMul all Q24.8 — fpMul handles the shift.
+    state.fuel -= fpMul(stage.fuelDrainPerTick, speedMul);
     if (state.fuel <= 0) {
       state.fuel = 0;
       state.gameOver = true;
@@ -417,7 +419,7 @@ export function stepMut(state: GameState, input: PlayerInput): void {
   // ---- Pillars ----
   const pillarInsetX = (PILLAR_WIDTH - PILLAR_HITBOX_W) / 2;
   for (const p of state.pillars) {
-    p.x -= PILLAR_SCROLL_SPEED * speedMul;
+    p.x -= PILLAR_SCROLL_SPEED * speedMulF;
     if (!p.passed && p.x + PILLAR_WIDTH < PLANE_X) {
       p.passed = true;
       state.score++;
@@ -462,7 +464,7 @@ export function stepMut(state: GameState, input: PlayerInput): void {
       else                offset = -((P - t) * A) / Q;       // −A  →  0
       e.y = e.spawnY + offset;
     }
-    e.x += e.vx * speedMul;
+    e.x += e.vx * speedMulF;
 
     const dims = enemyDims(e.kind);
     if (!e.passed && e.x + dims.hitboxW / 2 < PLANE_X) {
@@ -485,7 +487,7 @@ export function stepMut(state: GameState, input: PlayerInput): void {
 
   // ---- Missiles ----
   for (const m of state.missiles) {
-    m.x += m.vx * speedMul;
+    m.x += m.vx * speedMulF;
     const mLeft = m.x - MISSILE_HITBOX_W / 2;
     const mRight = m.x + MISSILE_HITBOX_W / 2;
     const mTop = m.y - MISSILE_HITBOX_H / 2;
@@ -501,7 +503,7 @@ export function stepMut(state: GameState, input: PlayerInput): void {
   // ---- Fuel tokens ----
   if (stage.fuelEnabled) {
     for (const t of state.fuelTokens) {
-      t.x -= FUEL_TOKEN_SCROLL_SPEED * speedMul;
+      t.x -= FUEL_TOKEN_SCROLL_SPEED * speedMulF;
     }
     state.fuelTokens = state.fuelTokens.filter((t) => {
       if (t.x + FUEL_TOKEN_HITBOX / 2 < 0) return false;

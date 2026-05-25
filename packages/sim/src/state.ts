@@ -13,7 +13,7 @@ export function createInitialState(seed: number, startStage: Stage = Stage.Commo
     stage: startStage,
     stageJustChanged: false,
     fuel: fp(FUEL_INITIAL),
-    worldSpeedMul: 1,
+    worldSpeedMul: fp(1),
     worldDistance: 0,
     nextPillarDistance: 0,
     nextEnemyDistance: 0,

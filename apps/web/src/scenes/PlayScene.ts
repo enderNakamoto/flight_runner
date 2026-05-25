@@ -899,7 +899,7 @@ export class PlayScene extends Phaser.Scene {
       this.planeSmokeSprite.x = this.planeSprite.x + tailOffX * Math.cos(angle);
       this.planeSmokeSprite.y = this.planeSprite.y + tailOffX * Math.sin(angle);
       this.planeSmokeSprite.setRotation(angle);
-      const boosting = this.phase === "playing" && this.state.worldSpeedMul > 1.01;
+      const boosting = this.phase === "playing" && fpToFloat(this.state.worldSpeedMul) > 1.01;
       const targetAlpha = boosting ? 1 : 0;
       this.planeSmokeSprite.alpha = Phaser.Math.Linear(this.planeSmokeSprite.alpha, targetAlpha, 0.18);
     }
@@ -1115,7 +1115,7 @@ export class PlayScene extends Phaser.Scene {
 
     // Speed indicator
     if (this.phase === "playing") {
-      const m = this.state.worldSpeedMul;
+      const m = fpToFloat(this.state.worldSpeedMul);
       if (m > 1.01) this.speedText.setText(`▶▶  ${m.toFixed(1)}×`);
       else if (m < 0.99) this.speedText.setText(`◀  ${m.toFixed(1)}×`);
       else this.speedText.setText("");
