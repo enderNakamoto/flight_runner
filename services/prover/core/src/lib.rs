@@ -8,3 +8,4 @@
 //! must keep the parity test passing. First slice: `fp` (the Q24.8 toolbelt).
 
 pub mod fp;
+pub mod prng;
