@@ -14,4 +14,5 @@ pub mod serialize;
 pub mod stages;
 pub mod state;
 pub mod step;
+pub mod transcript;
 pub mod types;

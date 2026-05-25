@@ -11,3 +11,10 @@ description = "Deterministic Q24.8 sim for flight_scroll. Mirror of packages/sim
 # Keep the crate signature simple — guest, host, and parity-test harness all
 # pull it in as a regular library. no_std + alloc shape lands when the zkVM
 # guest scaffolding goes in later.
+
+[dependencies]
+sha2 = "0.10"
+
+[[bin]]
+name = "parity"
+path = "src/bin/parity.rs"
