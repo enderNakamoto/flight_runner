@@ -55,6 +55,7 @@ import {
   WORLD_HEIGHT,
   WORLD_WIDTH,
   createInitialState,
+  encodeTranscript,
   stepMut,
   type GameState,
 } from "@flight/sim";
@@ -122,7 +123,7 @@ interface EnemySpec {
 }
 
 const ENEMY_SPEC: Record<EnemyKind, EnemySpec> = {
-  [EnemyKind.BirdSmall]: { displayW: BIRD_SMALL_DISPLAY_W, displayH: BIRD_SMALL_DISPLAY_H, hitboxW: BIRD_SMALL_HITBOX_W, hitboxH: BIRD_SMALL_HITBOX_H, texture: "bird_small_flap", flipX: false },
+  [EnemyKind.BirdSmall]: { displayW: BIRD_SMALL_DISPLAY_W, displayH: BIRD_SMALL_DISPLAY_H, hitboxW: BIRD_SMALL_HITBOX_W, hitboxH: BIRD_SMALL_HITBOX_H, texture: "bird_small_flap", flipX: true },
   [EnemyKind.BirdBig]:   { displayW: BIRD_BIG_DISPLAY_W,   displayH: BIRD_BIG_DISPLAY_H,   hitboxW: BIRD_BIG_HITBOX_W,   hitboxH: BIRD_BIG_HITBOX_H,   texture: "bird_big_flap",   flipX: true  },
   [EnemyKind.Drone]:     { displayW: DRONE_DISPLAY_W,      displayH: DRONE_DISPLAY_H,      hitboxW: DRONE_HITBOX_W,      hitboxH: DRONE_HITBOX_H,      texture: "drone",      flipX: true  },
   [EnemyKind.Jet]:       { displayW: JET_DISPLAY_W,        displayH: JET_DISPLAY_H,        hitboxW: JET_HITBOX_W,        hitboxH: JET_HITBOX_H,        texture: "jet",        flipX: false },
@@ -136,6 +137,13 @@ export class PlayScene extends Phaser.Scene {
   private phase: Phase = "ready";
   private best = 0;
   private seed = 0;
+
+  // Run transcript — one byte per simulated tick (the `buttons` value).
+  // Phase 3 prep: captured at the source of truth (the stepMut call) so a
+  // downloaded .bin round-trips through replay() to the same final state.
+  // 36000 bytes = 10 minutes at 60 Hz — well over any realistic run.
+  private transcriptBuf = new Uint8Array(36000);
+  private transcriptLen = 0;
 
   private bg!: Phaser.GameObjects.TileSprite;
   private bgFading: Phaser.GameObjects.TileSprite | null = null;
@@ -352,6 +360,7 @@ export class PlayScene extends Phaser.Scene {
       }
     });
     kb.on("keydown-R", () => this.maybeRestart());
+    kb.on("keydown-T", () => this.downloadTranscript());
     // Any other key in intro fast-forwards / dismisses the briefing too.
     kb.on("keydown", () => {
       if (this.phase === "intro") this.onSkip();
@@ -566,7 +575,11 @@ export class PlayScene extends Phaser.Scene {
       let safety = 6;
       while (this.accumulator >= TICK_MS && safety-- > 0) {
         this.accumulator -= TICK_MS;
-        stepMut(this.state, { buttons: this.readButtons() });
+        const btn = this.readButtons();
+        if (this.transcriptLen < this.transcriptBuf.length) {
+          this.transcriptBuf[this.transcriptLen++] = btn & 0xff;
+        }
+        stepMut(this.state, { buttons: btn });
         if (this.state.stageJustChanged) {
           this.onStageChanged();
           if (this.maybeEnterIntermission()) break;
@@ -751,7 +764,7 @@ export class PlayScene extends Phaser.Scene {
       .setText(isBest ? `NEW BEST  ${this.state.score}` : `SCORE ${this.state.score}    BEST ${this.best}`)
       .setColor(isBest ? "#ffd54f" : "#9be7ff")
       .setVisible(true);
-    this.interHint.setY(WORLD_HEIGHT - 20).setText("R to restart").setVisible(true);
+    this.interHint.setY(WORLD_HEIGHT - 20).setText("R restart   T download transcript").setVisible(true);
 
     // Sentinel Protocol branded outro — header, big tagline, sub-tagline, CTA.
     this.spHeader.setText("SENTINEL PROTOCOL  //  DELAY NOTIFICATION").setVisible(true);
@@ -1191,6 +1204,26 @@ export class PlayScene extends Phaser.Scene {
     for (const s of this.fuelTokenSprites.values()) s.destroy(); this.fuelTokenSprites.clear();
     if (this.bgFading) { this.bgFading.destroy(); this.bgFading = null; }
     this.scene.restart();
+  }
+
+  // Save the captured run as a flight_scroll .bin transcript. Format matches
+  // encodeTranscript(seed, buttons) in packages/sim — drop the file into the
+  // smoke harness or a future parity-test runner and it replays to the same
+  // final state shown on the outro screen.
+  private downloadTranscript(): void {
+    if (this.phase !== "gameOver" || this.transcriptLen === 0) return;
+    const buttons = this.transcriptBuf.subarray(0, this.transcriptLen);
+    const bin = encodeTranscript(this.seed, buttons);
+    const seedHex = (this.seed >>> 0).toString(16).padStart(8, "0");
+    const name = `flight_scroll_seed${seedHex}_t${this.transcriptLen}_s${this.state.score}.bin`;
+    const url = URL.createObjectURL(new Blob([bin], { type: "application/octet-stream" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   private makeSeed(): number { return (Date.now() & 0xffffffff) | 0; }
