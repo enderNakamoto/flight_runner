@@ -9,3 +9,4 @@
 
 pub mod fp;
 pub mod prng;
+pub mod types;
