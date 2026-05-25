@@ -4,3 +4,6 @@ export * from "./prng.js";
 export * from "./stages.js";
 export * from "./state.js";
 export * from "./step.js";
+export * from "./fp.js";
+export * from "./serialize.js";
+export * from "./transcript.js";

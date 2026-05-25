@@ -1,0 +1,108 @@
+// State serializer — packs the persistent fields of GameState into a fixed
+// byte layout so two sims (TS↔TS today, TS↔Rust later) can be compared
+// byte-for-byte at any tick. Caller hashes externally (e.g. SHA-256) to get
+// a per-tick state digest for the parity test.
+//
+// Format: little-endian throughout, all numeric fields are 4-byte ints/u32.
+// Booleans and small enums are bit-packed into u32s. Lists are prefixed by
+// a u32 length.
+//
+// Q24.8 contract: positions, speeds, fuel, world-distance are floats today
+// and become i32 Q24.8 after the Phase 3 conversion. The serializer calls
+// fp() on those fields TODAY so the byte output already matches the
+// post-conversion layout. After the cutover the fp() calls drop out.
+//
+// NOT serialized: stageJustChanged (transient render cue), worldSpeedMul
+// (deterministically derived from input — redundant).
+
+import { fp } from "./fp.js";
+import type { GameState } from "./types.js";
+
+export const SER_HEADER_BYTES = 15 * 4;   // 15 fixed-width fields
+export const SER_PILLAR_BYTES = 16;
+export const SER_ENEMY_BYTES = 32;
+export const SER_MISSILE_BYTES = 20;
+export const SER_TOKEN_BYTES = 12;
+
+export function serializedSize(state: GameState): number {
+  return SER_HEADER_BYTES
+    + 4 + state.pillars.length    * SER_PILLAR_BYTES
+    + 4 + state.enemies.length    * SER_ENEMY_BYTES
+    + 4 + state.missiles.length   * SER_MISSILE_BYTES
+    + 4 + state.fuelTokens.length * SER_TOKEN_BYTES;
+}
+
+export function serializeState(state: GameState, reuse?: Uint8Array): Uint8Array {
+  const size = serializedSize(state);
+  const buf = reuse && reuse.byteLength >= size
+    ? new Uint8Array(reuse.buffer, reuse.byteOffset, size)
+    : new Uint8Array(size);
+  const dv = new DataView(buf.buffer, buf.byteOffset, size);
+  let p = 0;
+  const wU32 = (v: number) => { dv.setUint32(p, v >>> 0, true); p += 4; };
+  const wI32 = (v: number) => { dv.setInt32(p, v | 0, true); p += 4; };
+  const wFp  = (v: number) => wI32(fp(v));
+
+  // Header
+  wU32(state.tick);
+  wU32(state.score);
+  wU32(
+    (state.gameOver ? 1 : 0)
+    | ((state.gameOverReason & 0xff) << 8)
+    | ((state.stage & 0xff) << 16),
+  );
+  wFp(state.fuel);
+  wFp(state.worldDistance);
+  wFp(state.nextPillarDistance);
+  wFp(state.nextEnemyDistance);
+  wFp(state.nextFuelDistance);
+  wFp(state.plane.y);
+  wFp(state.plane.vy);
+  wU32(state.rng.s);
+  wU32(state.nextPillarId);
+  wU32(state.nextEnemyId);
+  wU32(state.nextMissileId);
+  wU32(state.nextFuelTokenId);
+
+  // Pillars
+  wU32(state.pillars.length);
+  for (const pil of state.pillars) {
+    wU32(pil.id);
+    wFp(pil.x);
+    wI32(pil.gapY);          // whole pixels
+    wU32(pil.passed ? 1 : 0);
+  }
+
+  // Enemies
+  wU32(state.enemies.length);
+  for (const e of state.enemies) {
+    wU32(e.id);
+    wU32((e.kind & 0xff) | ((e.passed ? 1 : 0) << 8));
+    wU32(e.spawnTick);
+    wU32(e.nextFireTick);
+    wFp(e.x);
+    wFp(e.y);
+    wFp(e.vx);
+    wI32(e.spawnY);          // whole pixels
+  }
+
+  // Missiles
+  wU32(state.missiles.length);
+  for (const m of state.missiles) {
+    wU32(m.id);
+    wU32((m.tier & 0xff) | ((m.frame & 0xff) << 8));
+    wFp(m.x);
+    wFp(m.y);
+    wFp(m.vx);
+  }
+
+  // Fuel tokens
+  wU32(state.fuelTokens.length);
+  for (const t of state.fuelTokens) {
+    wU32(t.id);
+    wFp(t.x);
+    wI32(t.y);               // whole pixels
+  }
+
+  return buf;
+}
