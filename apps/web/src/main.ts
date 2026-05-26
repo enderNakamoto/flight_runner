@@ -12,6 +12,7 @@ import { WORLD_HEIGHT, WORLD_WIDTH } from "@flight/sim";
 import { startScoreSync } from "./chain/score-sync.js";
 import { restoreWallet } from "./chain/wallet.js";
 import { findGame } from "./landing/games.js";
+import { mountHowItWorks } from "./landing/how-it-works.js";
 import { mountLanding } from "./landing/landing.js";
 import { mountAllLeaderboards, mountGameLeaderboard } from "./landing/leaderboard.js";
 import { BootScene } from "./scenes/BootScene.js";
@@ -52,6 +53,8 @@ if (segments.length === 0) {
   mountLanding();
 } else if (segments.length === 1 && segments[0] === "leaderboard") {
   mountAllLeaderboards();
+} else if (segments.length === 1 && segments[0] === "how-it-works") {
+  mountHowItWorks();
 } else if (segments.length === 1) {
   const game = findGame(segments[0]!);
   if (game && game.status === "live") bootGame();

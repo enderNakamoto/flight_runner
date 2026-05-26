@@ -93,12 +93,22 @@ const STYLE = `
     margin: 0 auto;
     padding: 20px 24px 0;
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
     align-items: center;
     gap: 14px;
   }
-  #fs-landing .topnav a,
-  #fs-landing .topnav button {
+  #fs-landing .topnav .left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  #fs-landing .topnav .right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  /* Plain text links on the left (Leaderboards, How it works) */
+  #fs-landing .topnav .link {
     background: transparent;
     color: var(--muted);
     text-decoration: none;
@@ -110,33 +120,49 @@ const STYLE = `
     cursor: pointer;
     transition: color 0.1s, border-color 0.1s;
   }
-  #fs-landing .topnav a:hover,
-  #fs-landing .topnav button:hover {
+  #fs-landing .topnav .link:hover {
     color: var(--accent);
     border-color: var(--border);
   }
-  #fs-landing .topnav .signin {
+  /* Real button styling for sign in / sign out / address on the right */
+  #fs-landing .topnav .btn {
+    background: linear-gradient(135deg, #5b3aa8 0%, #2c5dd0 100%);
     color: #fff;
-    border-color: var(--border-bright);
-  }
-  #fs-landing .topnav .signin:hover {
-    background: #1c2a4c;
-  }
-  #fs-landing .topnav .signed {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    color: #d0d8ee;
-  }
-  #fs-landing .topnav .signed code {
-    background: rgba(255,255,255,0.06);
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 12px;
-  }
-  #fs-landing .topnav .signed button {
-    padding: 4px 8px;
+    border: 2px solid #8a6df0;
+    border-radius: 6px;
+    font-family: var(--font-pixel);
     font-size: 11px;
+    letter-spacing: 0.5px;
+    padding: 9px 16px;
+    cursor: pointer;
+    transition: background 0.1s, transform 0.08s;
+  }
+  #fs-landing .topnav .btn:hover {
+    background: linear-gradient(135deg, #6d4ac0 0%, #3a72e8 100%);
+    transform: translateY(-1px);
+  }
+  #fs-landing .topnav .btn:active { transform: translateY(0); }
+  #fs-landing .topnav .btn.ghost {
+    background: transparent;
+    color: var(--muted);
+    border-color: var(--border);
+    font-family: var(--font-body);
+    font-size: 12px;
+    letter-spacing: normal;
+    padding: 7px 12px;
+  }
+  #fs-landing .topnav .btn.ghost:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: transparent;
+  }
+  #fs-landing .topnav .addr {
+    font-family: var(--font-body);
+    font-size: 12px;
+    color: #d0d8ee;
+    background: rgba(255,255,255,0.06);
+    padding: 6px 10px;
+    border-radius: 4px;
   }
 
   #fs-landing .signin-banner {
@@ -510,7 +536,13 @@ export function mountLanding(): void {
 
   const nav = document.createElement("div");
   nav.className = "topnav";
-  nav.innerHTML = `<div id="fs-topnav-wallet"></div><a href="/leaderboard">📊 LEADERBOARDS</a>`;
+  nav.innerHTML = `
+    <div class="left">
+      <a class="link" href="/leaderboard">📊 LEADERBOARDS</a>
+      <a class="link" href="/how-it-works">⚙️ HOW IT WORKS</a>
+    </div>
+    <div class="right" id="fs-topnav-wallet"></div>
+  `;
   root.appendChild(nav);
 
   const inner = document.createElement("div");
@@ -554,17 +586,19 @@ export function mountLanding(): void {
   function renderTopnavWallet(addr: string | null): void {
     walletSlot.innerHTML = "";
     if (addr) {
-      const wrap = document.createElement("span");
-      wrap.className = "signed";
-      wrap.innerHTML = `<code>${fmtAddress(addr)}</code>`;
+      const addrEl = document.createElement("span");
+      addrEl.className = "addr";
+      addrEl.textContent = fmtAddress(addr);
+      walletSlot.appendChild(addrEl);
+
       const dc = document.createElement("button");
-      dc.textContent = "sign out";
+      dc.className = "btn ghost";
+      dc.textContent = "SIGN OUT";
       dc.onclick = () => disconnect();
-      wrap.appendChild(dc);
-      walletSlot.appendChild(wrap);
+      walletSlot.appendChild(dc);
     } else {
       const btn = document.createElement("button");
-      btn.className = "signin";
+      btn.className = "btn";
       btn.textContent = "SIGN IN";
       btn.onclick = doSignIn;
       walletSlot.appendChild(btn);
