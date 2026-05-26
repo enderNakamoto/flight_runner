@@ -67,6 +67,13 @@ export class BootScene extends Phaser.Scene {
     this.stripBackground("jet",        { isSpriteSheet: false, tolerance: 18 });
     this.stripBackground("missiles",   { isSpriteSheet: true,  tolerance: 14, frameWidth: 591, frameHeight: 222 });
 
+    // Propeller_plane (used by the towed banner planes) has hard-edged
+    // dark blade shapes per frame — when the animation plays, the blade
+    // in certain rotations looks like a sharp vertical line flickering
+    // on/off. Soften the blade-area pixels to ~40 % alpha so the spin
+    // reads as motion blur instead of discrete bars.
+    this.softenPropellerBlade("propeller_plane", { frameWidth: 96, frameHeight: 96, discStartX: 13, targetAlpha: 110 });
+
     // The bg PNGs aren't tileable horizontally (their left and right edges
     // don't match), so a scrolling tileSprite shows a vertical seam every time
     // tilePositionX crosses the texture width. Compose each with a
@@ -162,6 +169,68 @@ export class BootScene extends Phaser.Scene {
       }
     } else {
       this.textures.addCanvas(key, canvas);
+    }
+  }
+
+  /// Fade hard-edged "propeller blade" pixels in a propeller-plane
+  /// spritesheet down to a lower alpha so the spin animation looks like
+  /// motion blur rather than a flickering black line. Only touches
+  /// columns at or past `discStartX` (the area in front of the plane's
+  /// nose), so the plane body itself is preserved.
+  private softenPropellerBlade(
+    key: string,
+    opts: { frameWidth: number; frameHeight: number; discStartX: number; targetAlpha: number },
+  ): void {
+    const tex = this.textures.get(key);
+    if (!tex || tex.key === "__MISSING") return;
+    const img = tex.getSourceImage() as HTMLImageElement | HTMLCanvasElement;
+    const W = img.width;
+    const H = img.height;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
+    ctx.drawImage(img, 0, 0);
+    const imageData = ctx.getImageData(0, 0, W, H);
+    const px = imageData.data;
+
+    const fw = opts.frameWidth;
+    const fh = opts.frameHeight;
+    const cols = Math.floor(W / fw);
+    const DARK_BRIGHTNESS = 80; // RGB max below this counts as "blade"
+
+    for (let f = 0; f < cols; f++) {
+      for (let fy = 0; fy < fh; fy++) {
+        for (let fx = opts.discStartX; fx < fw; fx++) {
+          const idx = ((fy * W) + (f * fw + fx)) * 4;
+          const a = px[idx + 3]!;
+          const r = px[idx]!;
+          const g = px[idx + 1]!;
+          const b = px[idx + 2]!;
+          if (a > 128 && Math.max(r, g, b) < DARK_BRIGHTNESS) {
+            px[idx + 3] = opts.targetAlpha;
+          }
+        }
+      }
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+
+    // Re-register the spritesheet so Phaser picks up the modified canvas.
+    this.textures.remove(key);
+    const newTex = this.textures.addCanvas(key, canvas);
+    if (newTex) {
+      let frameIdx = 0;
+      const rows = Math.floor(H / fh);
+      const colsActual = Math.floor(W / fw);
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < colsActual; c++) {
+          newTex.add(frameIdx, 0, c * fw, r * fh, fw, fh);
+          frameIdx++;
+        }
+      }
     }
   }
 
