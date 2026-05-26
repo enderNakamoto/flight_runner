@@ -11,7 +11,8 @@ import { StrKey } from "@stellar/stellar-sdk";
 import { Buffer } from "buffer";
 import { CONFIG, requireContractId } from "../chain/config.js";
 import { Client, type HighScoreEntry } from "@flight/game-hub-client";
-import { findGame, GAMES, type GameEntry } from "./games.js";
+import { connect, getAddress, onWalletChange } from "../chain/wallet.js";
+import { GAMES, type GameEntry } from "./games.js";
 
 const STYLE = `
   @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
@@ -110,34 +111,24 @@ const STYLE = `
     color: var(--muted);
     font-size: 18px;
   }
-  #fs-lb .lookup {
+  #fs-lb .you {
     background: var(--bg-card);
     border: 3px solid var(--border);
     padding: 20px;
     margin-top: 8px;
   }
-  #fs-lb .lookup label {
-    display: block;
-    font-size: 12px;
-    margin-bottom: 8px;
+  #fs-lb .you .addr {
+    font-size: 11px;
     color: var(--muted);
+    margin-bottom: 14px;
+    word-break: break-all;
   }
-  #fs-lb .lookup input {
-    width: 100%;
-    background: #0a1024;
-    color: #fff;
-    border: 2px solid var(--border);
-    padding: 10px 12px;
-    font-family: var(--font-body);
-    font-size: 13px;
-    box-sizing: border-box;
+  #fs-lb .you .addr code {
+    background: rgba(255,255,255,0.06);
+    padding: 2px 6px;
+    border-radius: 3px;
   }
-  #fs-lb .lookup input:focus {
-    outline: none;
-    border-color: var(--border-bright);
-  }
-  #fs-lb .lookup button {
-    margin-top: 12px;
+  #fs-lb .you button {
     background: linear-gradient(135deg, #5b3aa8 0%, #2c5dd0 100%);
     color: #fff;
     border: 2px solid #8a6df0;
@@ -146,19 +137,20 @@ const STYLE = `
     font-size: 11px;
     cursor: pointer;
   }
-  #fs-lb .lookup button:disabled { opacity: 0.6; cursor: not-allowed; }
+  #fs-lb .you button:disabled { opacity: 0.6; cursor: not-allowed; }
   #fs-lb .result {
-    margin-top: 18px;
     padding: 16px;
     background: #0a1024;
     border: 2px solid var(--border);
     font-size: 13px;
     line-height: 1.7;
   }
-  #fs-lb .result .label { color: var(--muted); }
-  #fs-lb .result .val   { color: var(--accent); font-weight: 600; }
-  #fs-lb .result.err    { border-color: #6b2a2a; color: #ff9090; }
-  #fs-lb .result.empty  { color: var(--muted); font-style: italic; }
+  #fs-lb .result .row     { display: flex; justify-content: space-between; gap: 12px; }
+  #fs-lb .result .label   { color: var(--muted); }
+  #fs-lb .result .val     { color: var(--accent); font-weight: 600; }
+  #fs-lb .result .big     { font-size: 22px; font-family: var(--font-pixel); }
+  #fs-lb .result.err      { border-color: #6b2a2a; color: #ff9090; }
+  #fs-lb .result.empty    { color: var(--muted); font-style: italic; }
 `;
 
 function injectStyle(): void {
@@ -236,73 +228,102 @@ export function mountGameLeaderboard(game: GameEntry): void {
       <h1>${game.title}<br>LEADERBOARD</h1>
       <h2>Top scores</h2>
       <div class="result empty">Top scores coming soon.</div>
-      <h2>Look up a player</h2>
-      <div class="lookup">
-        <label for="fs-lb-addr">Paste any Stellar address to see their best run.</label>
-        <input id="fs-lb-addr" placeholder="G…" spellcheck="false" autocomplete="off">
-        <button id="fs-lb-go">LOOK UP</button>
-        <div id="fs-lb-out"></div>
-      </div>
+      <h2>Your best</h2>
+      <div class="you" id="fs-lb-you"></div>
     </div>
   `;
   document.body.appendChild(root);
 
-  const input = root.querySelector<HTMLInputElement>("#fs-lb-addr")!;
-  const btn = root.querySelector<HTMLButtonElement>("#fs-lb-go")!;
-  const out = root.querySelector<HTMLDivElement>("#fs-lb-out")!;
+  const youEl = root.querySelector<HTMLDivElement>("#fs-lb-you")!;
 
-  // Pre-fill from URL hash so /flight_scroll/leaderboard#G... auto-runs.
-  const hashAddr = window.location.hash.replace(/^#/, "");
-  if (hashAddr.startsWith("G")) {
-    input.value = hashAddr;
-    setTimeout(() => btn.click(), 0);
+  function renderConnect() {
+    youEl.innerHTML = `
+      <div style="margin-bottom: 14px; color: var(--muted); font-size: 13px;">
+        Connect your Stellar wallet to see your best run on chain.
+      </div>
+      <button id="fs-lb-connect">CONNECT WALLET</button>
+    `;
+    const btn = youEl.querySelector<HTMLButtonElement>("#fs-lb-connect")!;
+    btn.onclick = async () => {
+      btn.disabled = true;
+      btn.textContent = "OPENING WALLET…";
+      try {
+        await connect();
+        // onWalletChange will re-render with the loaded address.
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        renderError(m);
+      }
+    };
   }
 
-  const renderEntry = (e: HighScoreEntry | null) => {
+  function renderError(msg: string) {
+    youEl.innerHTML = `<div class="result err">${msg}</div>`;
+  }
+
+  function renderLoading(addr: string) {
+    youEl.innerHTML = `
+      <div class="addr"><code>${fmtAddress(addr)}</code></div>
+      <div class="result empty">Loading your score…</div>
+    `;
+  }
+
+  function renderScore(addr: string, e: HighScoreEntry | null) {
     if (!e) {
-      out.innerHTML = `<div class="result empty">No score on chain yet for this address.</div>`;
+      youEl.innerHTML = `
+        <div class="addr"><code>${fmtAddress(addr)}</code></div>
+        <div class="result empty">
+          You haven't submitted a score yet.
+          <a href="/${game.slug}" style="color: var(--accent); margin-left: 8px;">▶ play</a>
+        </div>
+      `;
       return;
     }
-    const settledDate = new Date(Number(e.settled_at) * 1000).toISOString().slice(0, 19) + "Z";
-    out.innerHTML = `
+    const settledDate = new Date(Number(e.settled_at) * 1000).toISOString().slice(0, 10);
+    youEl.innerHTML = `
+      <div class="addr"><code>${fmtAddress(addr)}</code></div>
       <div class="result">
-        <div><span class="label">score:</span> <span class="val">${e.score}</span></div>
-        <div><span class="label">ticks survived:</span> <span class="val">${e.ticks_survived}</span></div>
-        <div><span class="label">seed:</span> <code>0x${(e.seed >>> 0).toString(16).padStart(8, "0")}</code></div>
-        <div><span class="label">settled at:</span> ${settledDate}</div>
+        <div class="row"><span class="label">score</span><span class="val big">${e.score}</span></div>
+        <div class="row"><span class="label">ticks survived</span><span class="val">${e.ticks_survived}</span></div>
+        <div class="row"><span class="label">seed</span><code>0x${(e.seed >>> 0).toString(16).padStart(8, "0")}</code></div>
+        <div class="row"><span class="label">settled</span>${settledDate}</div>
       </div>
     `;
-  };
+  }
 
-  btn.onclick = async () => {
-    const strkey = input.value.trim();
-    if (!strkey) return;
-    btn.disabled = true;
-    out.innerHTML = `<div class="result empty">Loading…</div>`;
+  async function fetchAndRender(addr: string) {
+    renderLoading(addr);
     try {
       if (!CONFIG.gameHubContractId) {
         throw new Error("VITE_GAME_HUB_CONTRACT_ID not set");
       }
-      const pubkey = strkeyToPubkey(strkey);
+      const pubkey = strkeyToPubkey(addr);
       const client = getReadClient();
       const res = await client.get_score({
-        // game_id matches what scripts/deploy.sh registered. Hardcoded
-        // to 1 today since flight_scroll is the only game; if we add more
-        // we'll thread the game_id through from games.ts.
         game_id: CONFIG.flightScrollGameId,
         player_pubkey: pubkey,
       });
       const entry = (res.result as HighScoreEntry | undefined) ?? null;
-      renderEntry(entry);
+      renderScore(addr, entry);
     } catch (e) {
-      const m = e instanceof Error ? e.message : String(e);
-      out.innerHTML = `<div class="result err">${m}</div>`;
-    } finally {
-      btn.disabled = false;
+      renderError(e instanceof Error ? e.message : String(e));
     }
-  };
+  }
 
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") btn.click();
+  // React to wallet connect / disconnect throughout the page lifetime.
+  onWalletChange((addr) => {
+    if (addr) fetchAndRender(addr);
+    else renderConnect();
   });
+
+  // Initial render. If a wallet is already connected (because the player
+  // came from the submit flow earlier), this immediately fetches; if
+  // not, it shows the connect button.
+  const current = getAddress();
+  if (current) fetchAndRender(current);
+  else renderConnect();
+}
+
+function fmtAddress(a: string): string {
+  return a.length <= 14 ? a : `${a.slice(0, 8)}…${a.slice(-6)}`;
 }
