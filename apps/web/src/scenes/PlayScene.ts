@@ -61,6 +61,7 @@ import {
   type GameState,
 } from "@flight/sim";
 import { backgroundFor } from "../backgrounds.js";
+import { setLatestTranscript } from "../chain/transcript-buffer.js";
 import { INTERMISSION_DURATION_MS, INTERMISSIONS } from "../intermissions.js";
 import { INTRO_BODY, INTRO_HEADER, INTRO_HINT, INTRO_TITLE_TEMPLATE } from "../intro.js";
 import { OUTROS, REASON_TAG, SENTINEL_PROTOCOL_URL } from "../outros.js";
@@ -592,6 +593,7 @@ export class PlayScene extends Phaser.Scene {
         if (this.state.gameOver) {
           this.phase = "gameOver";
           this.commitBest();
+          this.publishTranscriptBuffer();
           this.showOutro();
           break;
         }
@@ -1249,6 +1251,15 @@ export class PlayScene extends Phaser.Scene {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  }
+
+  // Hand the captured run to the chain panel via a module-level buffer so
+  // the player can submit it to the relay without a manual .bin upload.
+  private publishTranscriptBuffer(): void {
+    if (this.transcriptLen === 0) return;
+    const buttons = this.transcriptBuf.subarray(0, this.transcriptLen);
+    const bin = encodeTranscript(this.seed, buttons);
+    setLatestTranscript(new Uint8Array(bin));
   }
 
   private makeSeed(): number {

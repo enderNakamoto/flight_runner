@@ -1,17 +1,25 @@
 // Wallet panel — DOM-based overlay outside Phaser.
 //
-// Simplified Phase 5 flow:
-//   1. Player connects wallet (optional — game playable without).
-//   2. Player plays the game locally; transcript saved via T key.
-//   3. Player runs `./scripts/prove.sh transcript.bin --player <strkey>` locally.
-//   4. Player uploads proof_artifacts.json → wallet signs submit_score.
-//   5. Personal best updates only if the new score beats the existing one.
+// Phase 6 flow (when VITE_RELAY_URL is set):
+//   1. Player connects wallet (read-only — wallet only used for get_score).
+//   2. Plays the game locally; transcript captured in memory at game over.
+//   3. Click "Submit to Relay" → POST transcript to /api/runs.
+//   4. Panel polls /api/runs/:id every 3s, surfaces status + tx_hash.
+//
+// Phase 5 fallback (VITE_RELAY_URL unset): manual prove.sh + upload
+// proof_artifacts.json, signed by the wallet directly.
 
 import { Buffer } from "buffer";
 import { StrKey } from "@stellar/stellar-sdk";
 import type { HighScoreEntry } from "@flight/game-hub-client";
 import { CONFIG } from "../chain/config.js";
 import { getClient, getReadClient } from "../chain/game-hub.js";
+import { getRunStatus, submitRun, type ProofStatus, type RunStatus } from "../chain/relay.js";
+import {
+  clearLatestTranscript,
+  getLatestTranscript,
+  onTranscriptChange,
+} from "../chain/transcript-buffer.js";
 import { connect, disconnect, getAddress, onWalletChange } from "../chain/wallet.js";
 
 function fmtAddress(a: string): string {
@@ -23,23 +31,14 @@ function hexToBuffer(hex: string): Buffer {
   return Buffer.from(clean, "hex");
 }
 
-/// Decode a Stellar G… strkey to its raw 32-byte ED25519 pubkey.
 function strkeyToPubkey(strkey: string): Buffer {
   return Buffer.from(StrKey.decodeEd25519PublicKey(strkey));
 }
 
 interface ProofArtifacts {
-  mode?: string;
   seal: string;
   journal: string;
-  image_id?: string;
-  output?: {
-    score?: number;
-    ticks_survived?: number;
-    seed?: number;
-    player?: string;
-    player_pubkey?: string;
-  };
+  output?: { score?: number; ticks_survived?: number };
 }
 
 function parseArtifacts(text: string): ProofArtifacts {
@@ -52,7 +51,7 @@ function parseArtifacts(text: string): ProofArtifacts {
 
 export function mountWalletPanel(root: HTMLElement): void {
   root.innerHTML = `
-    <div><strong>game_hub</strong> · testnet</div>
+    <div><strong>game_hub</strong> · ${CONFIG.relayUrl ? "relay-driven" : "manual"}</div>
     <div class="row">contract: <code id="cp-contract"></code></div>
     <div class="row" id="cp-wallet-row"></div>
     <div class="row" id="cp-best"></div>
@@ -65,7 +64,7 @@ export function mountWalletPanel(root: HTMLElement): void {
 
   $<HTMLElement>("#cp-contract").textContent = CONFIG.gameHubContractId
     ? fmtAddress(CONFIG.gameHubContractId)
-    : "(unset — deploy in slice 6)";
+    : "(unset)";
 
   const walletRow = $<HTMLDivElement>("#cp-wallet-row");
   const bestRow = $<HTMLDivElement>("#cp-best");
@@ -77,20 +76,100 @@ export function mountWalletPanel(root: HTMLElement): void {
     msgEl.className = "row" + (cls ? ` ${cls}` : "");
   }
 
-  // ── Submit Score ──────────────────────────────────────────────────────
+  // ── Submit (relay path) ───────────────────────────────────────────────
+
+  let polling = false;
 
   function renderSubmit(addr: string | null) {
     submitRow.innerHTML = "";
-    if (!addr || !CONFIG.gameHubContractId) return;
+    if (!addr) return;
 
+    if (CONFIG.relayUrl) {
+      renderRelaySubmit(addr);
+    } else {
+      renderManualSubmit(addr);
+    }
+  }
+
+  function renderRelaySubmit(addr: string) {
+    const transcript = getLatestTranscript();
+    if (!transcript) {
+      submitRow.innerHTML = `<em>play a run, then submit when game over</em>`;
+      return;
+    }
+    const wrap = document.createElement("div");
+    wrap.innerHTML = `<div style="color:#9bb;font-size:10px;">transcript ready (${transcript.length} bytes)</div>`;
+    const btn = document.createElement("button");
+    btn.textContent = "Submit to Relay";
+    btn.onclick = () => relaySubmitFlow(addr).catch((e) => {
+      setMsg(`submit failed: ${errMsg(e)}`, "err");
+      btn.disabled = false;
+    });
+    wrap.appendChild(btn);
+    submitRow.appendChild(wrap);
+  }
+
+  async function relaySubmitFlow(addr: string) {
+    if (polling) return;
+    const transcript = getLatestTranscript();
+    if (!transcript) {
+      setMsg("no transcript captured yet", "err");
+      return;
+    }
+    setMsg("Posting transcript to relay …");
+    const { run_id } = await submitRun(addr, transcript);
+    setMsg(`Queued as run #${run_id}. Polling …`);
+    clearLatestTranscript();
+    renderSubmit(addr);
+    polling = true;
+    try {
+      const final = await pollUntilDone(run_id);
+      if (final.proof_status === "settled") {
+        setMsg(
+          `Settled! tx ${(final.tx_hash ?? "").slice(0, 12)}…`,
+          "ok",
+        );
+        refreshBest(addr).catch(() => {});
+      } else {
+        setMsg(`Run #${run_id} failed: ${final.error ?? "unknown"}`, "err");
+      }
+    } finally {
+      polling = false;
+    }
+  }
+
+  async function pollUntilDone(runId: number): Promise<RunStatus> {
+    const intervalMs = 3000;
+    const deadlineMs = Date.now() + 30 * 60 * 1000; // 30 min — long enough for real Groth16
+    while (Date.now() < deadlineMs) {
+      const s = await getRunStatus(runId);
+      setMsg(`run #${runId}: ${statusLabel(s.proof_status)}`);
+      if (s.proof_status === "settled" || s.proof_status === "failed") return s;
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    throw new Error(`run #${runId} did not settle within 30 min`);
+  }
+
+  function statusLabel(s: ProofStatus): string {
+    switch (s) {
+      case "pending": return "queued (waiting for worker)";
+      case "proving": return "proving (worker picked it up)";
+      case "settled": return "settled on-chain";
+      case "failed":  return "failed";
+    }
+  }
+
+  // ── Submit (manual fallback when relay disabled) ──────────────────────
+
+  function renderManualSubmit(addr: string) {
+    if (!CONFIG.gameHubContractId) return;
     const cmd = `./scripts/prove.sh transcript.bin --player ${addr}`;
     const wrap = document.createElement("div");
     wrap.innerHTML = `
       <div style="color:#9bb; font-size:10px;">
         after playing: <code>${cmd}</code><br>
         then upload <code>proof_artifacts.json</code>:
-      </div>
-    `;
+      </div>`;
     const fileInput = document.createElement("input");
     fileInput.type = "file";
     fileInput.accept = "application/json,.json";
@@ -104,7 +183,6 @@ export function mountWalletPanel(root: HTMLElement): void {
     fileInput.onchange = () => {
       submitBtn.disabled = !fileInput.files || fileInput.files.length === 0;
     };
-
     submitBtn.onclick = async () => {
       const file = fileInput.files?.[0];
       if (!file) return;
@@ -118,17 +196,10 @@ export function mountWalletPanel(root: HTMLElement): void {
         if (seal.length !== 260) throw new Error(`seal must be 260 bytes, got ${seal.length}`);
         if (journal.length !== 76) throw new Error(`journal must be 76 bytes, got ${journal.length}`);
 
-        // Sanity: journal[12..44] is the player pubkey. It must match
-        // the connected wallet — otherwise this proof credits a different
-        // address and the user has no business signing it.
         const journalPubkey = journal.subarray(12, 44).toString("hex");
         const walletPubkey = strkeyToPubkey(addr).toString("hex");
         if (journalPubkey !== walletPubkey) {
-          throw new Error(
-            `proof commits to a different player (${journalPubkey.slice(0, 8)}…) ` +
-              `than the connected wallet (${walletPubkey.slice(0, 8)}…). ` +
-              `Re-run prove.sh with --player ${addr}.`,
-          );
+          throw new Error("proof commits to a different player than the connected wallet");
         }
 
         const client = getClient();
@@ -138,19 +209,15 @@ export function mountWalletPanel(root: HTMLElement): void {
           seal,
           journal,
         });
-        setMsg("Submitting tx …");
         const { result } = await tx.signAndSend();
         (result as { unwrap: () => void }).unwrap();
-        const sc = a.output?.score ?? "?";
-        const t = a.output?.ticks_survived ?? "?";
-        setMsg(`Submitted! score=${sc} ticks=${t}`, "ok");
+        setMsg(`Submitted! score=${a.output?.score ?? "?"}`, "ok");
         refreshBest(addr).catch(() => {});
       } catch (e) {
         setMsg(`submit_score failed: ${errMsg(e)}`, "err");
         submitBtn.disabled = !fileInput.files || fileInput.files.length === 0;
       }
     };
-
     wrap.appendChild(fileInput);
     wrap.appendChild(submitBtn);
     submitRow.appendChild(wrap);
@@ -226,6 +293,9 @@ export function mountWalletPanel(root: HTMLElement): void {
   }
 
   onWalletChange(renderWalletRow);
+  onTranscriptChange(() => {
+    if (!polling) renderSubmit(getAddress());
+  });
   renderWalletRow(getAddress());
 }
 

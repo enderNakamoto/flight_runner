@@ -13,12 +13,12 @@ export const CONFIG = {
   rpcUrl: env.VITE_STELLAR_RPC_URL ?? "https://soroban-testnet.stellar.org",
   /// Network passphrase — must match the RPC endpoint's network.
   networkPassphrase: env.VITE_STELLAR_NETWORK_PASSPHRASE ?? Networks.TESTNET,
-  /// Deployed game_hub contract id (C...). Empty until slice 6 deploys.
-  /// Wallet flows refuse to proceed when this is empty so we fail loud.
+  /// Deployed game_hub contract id (C...).
   gameHubContractId: env.VITE_GAME_HUB_CONTRACT_ID ?? "",
-  /// game_id for flight_scroll inside game_hub. Admin-provided per
-  /// memory/project_prover_deploy_target.md; convention reserves 1–99 for
-  /// first-party games. flight_scroll = 1.
+  /// Relay URL for the Phase 6 async path (POST transcript, poll status).
+  /// Empty = relay disabled; the wallet panel falls back to manual upload.
+  relayUrl: env.VITE_RELAY_URL ?? "",
+  /// game_id for flight_scroll inside game_hub. flight_scroll = 1.
   flightScrollGameId: 1,
 } as const;
 
