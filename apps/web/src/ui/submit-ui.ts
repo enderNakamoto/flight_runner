@@ -236,7 +236,23 @@ export function mountSubmitUI(): void {
         hideButton();
         renderAction();
       } catch (e) {
-        setStatus(`Sign failed: ${errMsg(e)}`, "err");
+        const m = errMsg(e);
+        // Soroban marks submit_score as read-only when the new score
+        // doesn't beat the existing PB (no HighScore write happens).
+        // Bindings refuse to sign+send a no-op tx. That's the contract
+        // working correctly — surface it nicely and drop the proof.
+        if (/this is a read call/i.test(m)) {
+          clearPendingProof();
+          clearLatestTranscript();
+          setStatus(
+            `Score ${p.score} didn't beat your on-chain best — nothing to submit. Try a better run.`,
+            "ok",
+          );
+          hideButton();
+          renderAction();
+          return;
+        }
+        setStatus(`Sign failed: ${m}`, "err");
       }
     }
 
