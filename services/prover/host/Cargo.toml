@@ -11,6 +11,10 @@ description = "flight-host CLI — drives the RISC Zero prover over a recorded t
 name = "flight-host"
 path = "src/main.rs"
 
+[[bin]]
+name = "image-id"
+path = "src/bin/image_id.rs"
+
 [dependencies]
 risc0-zkvm = "3.0"
 flight_methods = { path = "../methods" }
