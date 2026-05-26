@@ -21,9 +21,49 @@
         align-items: center;
         justify-content: center;
       }
+      /* Chain panel — sits in the top-left corner of the viewport, above
+         the Phaser canvas. Slice 5b only renders Connect Wallet + Start
+         On-Chain Run. Slice 5c adds Submit Score + My Best. */
+      #chain-panel {
+        position: fixed;
+        top: 8px;
+        left: 8px;
+        z-index: 100;
+        background: rgba(20, 24, 40, 0.85);
+        border: 1px solid #3a4a6b;
+        border-radius: 4px;
+        padding: 8px 10px;
+        font-size: 11px;
+        line-height: 1.4;
+        min-width: 220px;
+        max-width: 320px;
+      }
+      #chain-panel button {
+        font-family: inherit;
+        font-size: 11px;
+        cursor: pointer;
+        background: #2b3b5e;
+        color: #eee;
+        border: 1px solid #4a5d85;
+        border-radius: 3px;
+        padding: 4px 8px;
+        margin-top: 4px;
+      }
+      #chain-panel button:hover:not(:disabled) { background: #3a4d75; }
+      #chain-panel button:disabled { opacity: 0.5; cursor: not-allowed; }
+      #chain-panel code {
+        background: rgba(255, 255, 255, 0.08);
+        padding: 1px 4px;
+        border-radius: 2px;
+        font-size: 10px;
+      }
+      #chain-panel .row { margin-top: 4px; }
+      #chain-panel .err { color: #ff7a7a; }
+      #chain-panel .ok  { color: #7aff8e; }
     </style>
   </head>
   <body>
+    <div id="chain-panel"></div>
     <div id="game"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

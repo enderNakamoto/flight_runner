@@ -1251,7 +1251,19 @@ export class PlayScene extends Phaser.Scene {
     URL.revokeObjectURL(url);
   }
 
-  private makeSeed(): number { return (Date.now() & 0xffffffff) | 0; }
+  private makeSeed(): number {
+    // Phase 5: if the player started an on-chain run, the wallet panel
+    // stashed the contract-issued seed in sessionStorage. Use it so the
+    // local sim matches what the prover will replay against.
+    try {
+      const raw = sessionStorage.getItem("flight.currentRun");
+      if (raw) {
+        const r = JSON.parse(raw) as { seed?: number };
+        if (typeof r.seed === "number") return r.seed | 0;
+      }
+    } catch { /* fall through to local seed */ }
+    return (Date.now() & 0xffffffff) | 0;
+  }
 
   private loadBest(): number {
     try {
