@@ -134,26 +134,27 @@ Nothing chain-related appears until the player wants to submit. **Play loop:**
 
 1. **Play** — keyboard controls (↑/↓ steer, ←/→ throttle). No wallet, no panel.
 2. **Game over** — a small floating "🏆 Submit Score" button fades in at the bottom-right.
-3. **Click Submit Score** → modal opens.
-4. **Connect Wallet** inside the modal (Freighter / xBull / Albedo / etc.).
-5. **Submit to chain** → relay proves + submits → returns the tx hash.
+3. **Click Submit** → modal opens.
+4. **Prove this run** — relay generates the RISC Zero proof (5–25 min). The proof is cached in localStorage; the player can close the tab and come back later.
+5. **Connect Wallet** inside the modal (Freighter / xBull / Albedo / etc.) if not already connected.
+6. **Sign + Submit** — the player's wallet signs `submit_score` and pays the ~$0.001 in XLM gas. The score lands on chain.
 
 There's no leaderboard view in the UI itself — the contract is the leaderboard. Query it with `stellar contract invoke … get_score …` or any Soroban explorer.
 
-### Running the relay
+### Running the relay (pure prover)
 
-The Submit button POSTs to a relay (see `services/server/`). Locally:
+The Submit button POSTs to a relay that runs `flight-host` and returns the proof artifacts. **The relay never touches Stellar** — the browser's wallet does the on-chain submit.
 
 ```bash
 cargo build --release --bin flight-host          # once, builds the prover
 cd services/server
-cp .env.example .env                             # then fill in RELAY_SECRET_KEY etc.
+cp .env.example .env                             # only three vars
 bun run dev                                      # listens on :8787
 ```
 
 Set `VITE_RELAY_URL=http://localhost:8787` in `apps/web/.env.local` and rebuild the web app.
 
-The relay is a single fire-and-forget endpoint — it spawns `flight-host` per request, waits for the proof, calls `submit_score` on-chain with its own funded keypair, and returns the tx hash. No DB, no queue.
+The relay has no Stellar private key, no XLM, no on-chain dependencies. The player pays their own gas — Stellar testnet via friendbot or mainnet via ~$0.001 in XLM per submission.
 
 ---
 
