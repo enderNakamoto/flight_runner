@@ -22,6 +22,7 @@ import {
   type PendingProof,
 } from "../chain/pending-proof.js";
 import { proveTranscript, type ProveResult } from "../chain/relay.js";
+import { SENTINEL_PROTOCOL_URL } from "../outros.js";
 import {
   clearLatestRun,
   getLatestRun,
@@ -69,16 +70,29 @@ const STYLE = `
     letter-spacing: 0.3px;
     padding: 16px 32px;
     min-width: 280px;
-    background: linear-gradient(135deg, #5b3aa8 0%, #2c5dd0 100%);
     color: #fff;
-    border: 2px solid #8a6df0;
     border-radius: 10px;
     cursor: pointer;
     animation: fs-pulse 2.2s ease-in-out infinite;
     transition: transform 0.1s ease;
   }
-  #fs-submit-btn:hover {
+  /* Submit-Score variant — purple/blue gradient = "the chain action" */
+  #fs-submit-btn.submit {
+    background: linear-gradient(135deg, #5b3aa8 0%, #2c5dd0 100%);
+    border: 2px solid #8a6df0;
+  }
+  #fs-submit-btn.submit:hover {
     background: linear-gradient(135deg, #6d4ac0 0%, #3a72e8 100%);
+    transform: translateX(-50%) translateY(-1px);
+  }
+  /* Sentinel CTA variant — gold = partner / off-site = different tone */
+  #fs-submit-btn.sentinel {
+    background: linear-gradient(135deg, #b48a00 0%, #f5d04b 100%);
+    border: 2px solid #f5d04b;
+    color: #20140a;
+  }
+  #fs-submit-btn.sentinel:hover {
+    background: linear-gradient(135deg, #c89c12 0%, #ffdd66 100%);
     transform: translateX(-50%) translateY(-1px);
   }
   #fs-submit-btn:active { transform: translateX(-50%) translateY(0); }
@@ -166,15 +180,20 @@ export function mountSubmitUI(): void {
   let btn: HTMLButtonElement | null = null;
   let modal: HTMLDivElement | null = null;
 
-  function showButton(label: string, badge?: string) {
+  function showButton(opts: { label: string; badge?: string; variant?: "submit" | "sentinel"; onClick: () => void }) {
+    const html = `${opts.label}${opts.badge ? `<span class="badge">${opts.badge}</span>` : ""}`;
+    const variantClass = opts.variant === "sentinel" ? "sentinel" : "submit";
     if (btn) {
-      btn.innerHTML = `${label}${badge ? `<span class="badge">${badge}</span>` : ""}`;
+      btn.innerHTML = html;
+      btn.className = variantClass;
+      btn.onclick = opts.onClick;
       return;
     }
     btn = document.createElement("button");
     btn.id = "fs-submit-btn";
-    btn.innerHTML = `${label}${badge ? `<span class="badge">${badge}</span>` : ""}`;
-    btn.onclick = openModal;
+    btn.className = variantClass;
+    btn.innerHTML = html;
+    btn.onclick = opts.onClick;
     document.body.appendChild(btn);
   }
 
@@ -183,26 +202,43 @@ export function mountSubmitUI(): void {
     btn = null;
   }
 
+  function openSentinelSite() {
+    window.open(SENTINEL_PROTOCOL_URL, "_blank", "noopener,noreferrer");
+  }
+
   function refreshButtonVisibility() {
     if (modal) return; // don't fight the modal's open state
     const pending = getPendingProof();
     const run = getLatestRun();
     if (pending) {
-      showButton("🏆 Sign Pending", `${ageMin(pending.proved_at)} min`);
+      showButton({
+        label: "🏆 Sign Pending",
+        badge: `${ageMin(pending.proved_at)} min`,
+        onClick: openModal,
+      });
       return;
     }
     if (run) {
-      // Only offer to submit if the just-played score is at least equal
-      // to the local best. localStorage best is hydrated from chain at
-      // sign-in (see chain/score-sync.ts) so this compares against the
-      // player's actual on-chain personal-best when signed in. Strictly
-      // lower → no button, no wasted prove + tx.
+      // localStorage best is hydrated from chain at sign-in (see
+      // chain/score-sync.ts) so this compares against the player's
+      // actual on-chain personal-best when signed in.
       const localBest = localBestFor(currentGameSlug());
-      if (run.score < localBest) {
-        hideButton();
-        return;
+      if (run.score >= localBest) {
+        // New PB worth submitting — drive to the submit flow + tease
+        // Sentinel Protocol points in the modal.
+        showButton({
+          label: "🏆 Submit Score · earn Sentinel points",
+          onClick: openModal,
+        });
+      } else {
+        // Not a new PB — pivot to the Sentinel CTA so the player still
+        // engages with the partner regardless of submit-worthiness.
+        showButton({
+          label: "✈️ Cover your next flight",
+          variant: "sentinel",
+          onClick: openSentinelSite,
+        });
       }
-      showButton("🏆 Submit Score");
       return;
     }
     hideButton();
@@ -409,7 +445,11 @@ export function mountSubmitUI(): void {
 
       if (run) {
         titleEl.textContent = "Submit your score on-chain";
-        subEl.textContent = `score ${run.score} · ticks ${run.ticks} · ${CONFIG.networkPassphrase.startsWith("Test") ? "testnet" : "mainnet"}`;
+        subEl.innerHTML = `
+          score <strong>${run.score}</strong> · ticks <strong>${run.ticks}</strong>
+          · ${CONFIG.networkPassphrase.startsWith("Test") ? "testnet" : "mainnet"}<br>
+          <span style="color: #f5d04b;">★ Top-10 scores earn Sentinel Protocol points</span>
+        `;
         if (!CONFIG.relayUrl) {
           actionEl.innerHTML = `<span class="err">VITE_RELAY_URL not set — proving unavailable.</span>`;
           return;
