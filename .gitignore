@@ -29,6 +29,9 @@ Cargo.lock.bak
 .env.local
 .env.*.local
 
+# Relay runtime state
+services/server/.data/
+
 # Build artifacts
 proof_artifacts.json
 *.wasm.gz
