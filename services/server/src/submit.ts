@@ -1,16 +1,18 @@
-// POST /api/submit-score — the only endpoint.
+// POST /api/prove — the only endpoint.
 //
-// Synchronous: spawn flight-host on the player's transcript, wait for
-// proof_artifacts.json, call submit_score on chain, return the tx hash.
-// Whole request takes minutes; HTTP keep-alive holds it. If the client
-// disconnects mid-flight, the relay still finishes — the score lands
-// on chain regardless and the player just refreshes get_score.
+// Pure prover: spawn flight-host on the player's transcript, wait for
+// proof_artifacts.json, return { seal_hex, journal_hex } to the caller.
+// The relay never touches the chain — the browser's wallet signs and
+// submits the on-chain submit_score.
+//
+// Whole request takes minutes (5–25 min for a real Groth16 wrap).
+// HTTP keep-alive holds it. If the client disconnects mid-flight, the
+// process still finishes; the player just has to re-submit.
 
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { StrKey } from "@stellar/stellar-sdk";
-import { submitScore } from "./chain.ts";
 import { CONFIG } from "./config.ts";
 
 const MAX_TRANSCRIPT_BYTES = 64 * 1024;
@@ -21,7 +23,7 @@ function jsonError(status: number, message: string): Response {
   return Response.json({ ok: false, error: message }, { status });
 }
 
-export async function handleSubmitScore(req: Request): Promise<Response> {
+export async function handleProve(req: Request): Promise<Response> {
   let body: unknown;
   try {
     body = await req.json();
@@ -68,8 +70,11 @@ export async function handleSubmitScore(req: Request): Promise<Response> {
     return jsonError(413, `transcript exceeds ${MAX_TRANSCRIPT_BYTES} bytes`);
   }
 
-  const workDir = await mkdir(join(tmpdir(), `flight-relay-${Date.now()}-${Math.random().toString(36).slice(2)}`), { recursive: true });
-  const dir = workDir!;
+  const dir = await mkdir(
+    join(tmpdir(), `flight-relay-${Date.now()}-${Math.random().toString(36).slice(2)}`),
+    { recursive: true },
+  );
+  if (!dir) throw new Error("mkdir returned undefined");
   const transcriptPath = join(dir, "transcript.bin");
   const proofPath = join(dir, "proof_artifacts.json");
 
@@ -104,15 +109,13 @@ export async function handleSubmitScore(req: Request): Promise<Response> {
       return jsonError(500, "flight-host output missing seal/journal");
     }
 
-    console.log(`[relay] submitting on-chain for ${player_strkey} …`);
-    const submit = await submitScore(CONFIG.gameId, artifacts.seal, artifacts.journal);
-    if (!submit.ok) {
-      return jsonError(502, `submit_score failed: ${submit.error}`);
-    }
-    console.log(`[relay] ✅ tx ${submit.txHash} for ${player_strkey}`);
+    console.log(
+      `[relay] ✅ proved score=${artifacts.output?.score ?? "?"} for ${player_strkey}`,
+    );
     return Response.json({
       ok: true,
-      tx_hash: submit.txHash,
+      seal_hex: artifacts.seal,
+      journal_hex: artifacts.journal,
       score: artifacts.output?.score,
       ticks_survived: artifacts.output?.ticks_survived,
     });

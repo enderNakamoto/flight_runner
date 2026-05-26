@@ -1,13 +1,13 @@
-// Relay entry — Bun HTTP server. Single endpoint: POST /api/submit-score.
-// No DB, no queue, no workers — the contract is the only persistent state.
+// Relay entry — Bun HTTP server. Single endpoint: POST /api/prove.
+// Pure prover; never touches Stellar.
 
-import { CONFIG, maskSecret } from "./config.ts";
-import { handleSubmitScore } from "./submit.ts";
+import { CONFIG } from "./config.ts";
+import { handleProve } from "./submit.ts";
 
 const server = Bun.serve({
   port: CONFIG.port,
-  idleTimeout: 0, // Bun caps idle at 255s by default; 0 = no cap so a real
-                  // Groth16 wrap (15–25 min) can finish without the socket dying.
+  idleTimeout: 0, // Bun defaults to 255s; 0 = no cap so a real Groth16
+                  // wrap (15–25 min) doesn't get killed mid-prove.
   async fetch(req) {
     const url = new URL(req.url);
     const path = url.pathname;
@@ -40,20 +40,14 @@ function corsHeaders(): Record<string, string> {
 
 async function route(req: Request, path: string, method: string): Promise<Response> {
   if (path === "/health") {
-    return Response.json({
-      ok: true,
-      network: CONFIG.network,
-      contract: CONFIG.gameHubContractId,
-      game_id: CONFIG.gameId,
-    });
+    return Response.json({ ok: true, role: "prover" });
   }
-  if (path === "/api/submit-score" && method === "POST") {
-    return handleSubmitScore(req);
+  if (path === "/api/prove" && method === "POST") {
+    return handleProve(req);
   }
   return new Response("not found", { status: 404 });
 }
 
 console.log(`[relay] listening on http://localhost:${server.port}`);
-console.log(`[relay] network=${CONFIG.network} contract=${CONFIG.gameHubContractId}`);
-console.log(`[relay] relay key=${maskSecret(CONFIG.relaySecretKey)} game_id=${CONFIG.gameId}`);
 console.log(`[relay] flight-host=${CONFIG.flightHostBin}`);
+console.log(`[relay] role=pure prover (no chain interaction)`);
