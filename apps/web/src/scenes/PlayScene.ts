@@ -61,7 +61,7 @@ import {
   type GameState,
 } from "@flight/sim";
 import { backgroundFor } from "../backgrounds.js";
-import { setLatestRun } from "../chain/transcript-buffer.js";
+import { clearLatestRun, setLatestRun } from "../chain/transcript-buffer.js";
 import { INTERMISSION_DURATION_MS, INTERMISSIONS } from "../intermissions.js";
 import { INTRO_BODY, INTRO_HEADER, INTRO_HINT, INTRO_TITLE_TEMPLATE } from "../intro.js";
 import { OUTROS, REASON_TAG, SENTINEL_PROTOCOL_URL } from "../outros.js";
@@ -274,6 +274,12 @@ export class PlayScene extends Phaser.Scene {
     // instance across scene.restart(), so the class-field initializer only
     // ran the first time — without this, runs concatenate across restarts.
     this.transcriptLen = 0;
+    // A fresh play is the player's explicit "I don't want to submit the
+    // previous run" — drop the captured run so the floating Submit button
+    // disappears as soon as they start over. Pending proofs in localStorage
+    // (intentional commitments from earlier sessions) are NOT cleared
+    // here — they survive across restarts until signed or discarded.
+    clearLatestRun();
     // Skip the intro for stage jumps via ?stage=N and for test runs — the
     // briefing is only shown for fresh Stage-Common starts a real player sees.
     this.phase =
