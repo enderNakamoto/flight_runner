@@ -4,7 +4,7 @@
 import { GAMES, type GameEntry } from "./games.js";
 
 const STYLE = `
-  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
   :root {
     --bg: #0a1024;
@@ -15,6 +15,12 @@ const STYLE = `
     --pink: #ff79c6;
     --green: #7aff8e;
     --muted: #94a3c6;
+
+    /* Two-font split:
+         pixel — for headers + button labels; chunky, impact, hard to read at body sizes
+         body  — for everything you actually need to scan or read */
+    --font-pixel: 'Press Start 2P', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --font-body: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 
   #fs-landing {
@@ -24,7 +30,7 @@ const STYLE = `
     background:
       radial-gradient(ellipse at top, #1a2750 0%, #0a1024 60%, #050a18 100%);
     color: #fff;
-    font-family: 'Press Start 2P', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-body);
     overflow-y: auto;
     image-rendering: pixelated;
   }
@@ -67,9 +73,10 @@ const STYLE = `
   }
 
   #fs-landing h1 {
+    font-family: var(--font-pixel);
     font-size: 36px;
     line-height: 1.05;
-    margin: 0 0 18px;
+    margin: 0 0 22px;
     letter-spacing: 1px;
     color: #fff;
     text-shadow:
@@ -86,12 +93,13 @@ const STYLE = `
   }
 
   #fs-landing .subtitle {
-    font-size: 10px;
+    font-size: 14px;
     color: var(--muted);
     margin: 0 0 56px;
-    line-height: 1.8;
+    line-height: 1.6;
+    letter-spacing: 0.2px;
   }
-  #fs-landing .subtitle .accent { color: var(--accent); }
+  #fs-landing .subtitle .accent { color: var(--accent); font-weight: 600; }
 
   #fs-landing .grid {
     display: grid;
@@ -151,22 +159,24 @@ const STYLE = `
   }
 
   #fs-landing .card h2 {
-    font-size: 14px;
-    margin: 0 0 10px;
+    font-family: var(--font-pixel);
+    font-size: 16px;
+    margin: 0 0 12px;
     color: var(--accent);
     letter-spacing: 0.5px;
   }
   #fs-landing .card .blurb {
-    font-size: 9px;
-    color: #d0d8ee;
-    line-height: 1.7;
+    font-size: 14px;
+    font-weight: 500;
+    color: #e3e8f6;
+    line-height: 1.5;
     margin-bottom: 12px;
   }
   #fs-landing .card .desc {
-    font-size: 8px;
+    font-size: 13px;
     color: var(--muted);
-    line-height: 2;
-    margin-bottom: 16px;
+    line-height: 1.6;
+    margin-bottom: 18px;
   }
 
   #fs-landing .card .play {
@@ -175,8 +185,9 @@ const STYLE = `
     color: #fff;
     padding: 10px 16px;
     border: 2px solid #8a6df0;
-    font-size: 10px;
-    font-family: inherit;
+    font-family: var(--font-pixel);
+    font-size: 11px;
+    letter-spacing: 0.5px;
   }
   #fs-landing .card.soon .play {
     background: #2a2f3f;
@@ -184,23 +195,26 @@ const STYLE = `
   }
 
   #fs-landing .footer {
-    font-size: 8px;
+    font-size: 12px;
     color: var(--muted);
-    line-height: 2.2;
+    line-height: 1.6;
     margin-top: 32px;
   }
   #fs-landing .footer a {
     color: var(--accent);
     text-decoration: none;
+    font-weight: 500;
   }
   #fs-landing .footer a:hover { text-decoration: underline; }
 
   @media (max-width: 560px) {
     #fs-landing h1 { font-size: 24px; }
     #fs-landing h1 .sub { font-size: 16px; }
-    #fs-landing .subtitle { font-size: 9px; margin-bottom: 36px; }
+    #fs-landing .subtitle { font-size: 12px; margin-bottom: 36px; }
     #fs-landing .inner { padding: 36px 16px 64px; }
-    #fs-landing .card h2 { font-size: 12px; }
+    #fs-landing .card h2 { font-size: 13px; }
+    #fs-landing .card .blurb { font-size: 13px; }
+    #fs-landing .card .desc { font-size: 12px; }
   }
 `;
 
