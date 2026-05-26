@@ -10,10 +10,10 @@ export const INTRO_TITLE_TEMPLATE = (flightId: string): string =>
 export const INTRO_BODY: readonly string[] = [
   "Los Angeles → Dubai",
   "",
-  "MISSION   Land in one piece.",
-  "HAZARDS   Birds. Drones. Jets. UFOs.",
-  "REWARD    Top-10 leaderboard scores earn",
-  "          Sentinel Protocol points.",
+  "MISSION:  Land in one piece.",
+  "HAZARDS:  Birds. Drones. Jets. UFOs.",
+  "REWARD:   Every on-chain score earns Sentinel points.",
+  "          Top-10 scores earn more.",
 ];
 
 export const INTRO_HINT = "PRESS ANY KEY TO BOARD";
