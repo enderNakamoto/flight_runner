@@ -5,6 +5,7 @@ import { Buffer } from "buffer";
 import { StrKey } from "@stellar/stellar-sdk";
 import { Client, type HighScoreEntry } from "@flight/game-hub-client";
 import { CONFIG, requireContractId } from "../chain/config.js";
+import { syncLocalBest } from "../chain/score-sync.js";
 import { connect, disconnect, getAddress, onWalletChange } from "../chain/wallet.js";
 import { GAMES, type GameEntry } from "./games.js";
 
@@ -449,8 +450,10 @@ function makeCard(g: GameEntry): HTMLElement {
   return card;
 }
 
-/// Fetch get_score for every live game and render an inline best
-/// chip on each card. Called when the wallet connects.
+/// Fetch get_score for every live game, render an inline best chip on
+/// each card, and hydrate localStorage so the in-game HUD's BEST
+/// counter matches the chain on fresh browsers. Called when the
+/// wallet connects.
 async function refreshAllBests(addr: string): Promise<void> {
   if (!CONFIG.gameHubContractId) return;
   const client = getReadClient();
@@ -471,6 +474,7 @@ async function refreshAllBests(addr: string): Promise<void> {
       if (entry) {
         card.classList.remove("empty");
         card.innerHTML = `<span class="label">your best</span><span class="val">${entry.score}</span>`;
+        syncLocalBest(g.slug, entry.score);
       } else {
         card.classList.add("empty");
         card.innerHTML = `no score yet — set one`;

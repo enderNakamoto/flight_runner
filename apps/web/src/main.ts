@@ -9,6 +9,7 @@
 
 import Phaser from "phaser";
 import { WORLD_HEIGHT, WORLD_WIDTH } from "@flight/sim";
+import { startScoreSync } from "./chain/score-sync.js";
 import { restoreWallet } from "./chain/wallet.js";
 import { findGame } from "./landing/games.js";
 import { mountLanding } from "./landing/landing.js";
@@ -17,6 +18,12 @@ import { BootScene } from "./scenes/BootScene.js";
 import { PlayScene } from "./scenes/PlayScene.js";
 import { mountSigninTip } from "./ui/signin-tip.js";
 import { mountSubmitUI } from "./ui/submit-ui.js";
+
+// Subscribe globally: whenever a wallet connects (silent restore on
+// page load OR explicit user sign-in), mirror the player's on-chain
+// best scores to localStorage so cross-browser sessions show the right
+// in-HUD BEST overlay. The chain remains the source of truth.
+startScoreSync();
 
 // Silent reconnect of a previously-chosen wallet — doesn't open the
 // picker, just re-attaches if the user already authorized the site.
