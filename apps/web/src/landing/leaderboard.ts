@@ -234,17 +234,14 @@ export function mountGameLeaderboard(game: GameEntry): void {
     ${topnav(`<a href="/${game.slug}">▶ play this game</a>`)}
     <div class="inner">
       <h1>${game.title}<br>LEADERBOARD</h1>
-      <p class="subtitle">paste any Stellar G-address to see their personal best on-chain</p>
+      <h2>Top scores</h2>
+      <div class="result empty">Top scores coming soon.</div>
+      <h2>Look up a player</h2>
       <div class="lookup">
-        <label for="fs-lb-addr">Stellar address</label>
+        <label for="fs-lb-addr">Paste any Stellar address to see their best run.</label>
         <input id="fs-lb-addr" placeholder="G…" spellcheck="false" autocomplete="off">
         <button id="fs-lb-go">LOOK UP</button>
         <div id="fs-lb-out"></div>
-      </div>
-      <h2>Top scores</h2>
-      <div class="result empty">
-        a top-N leaderboard needs an off-chain indexer that watches the contract's
-        <code>pb</code> events. coming when there are enough scores to be interesting.
       </div>
     </div>
   `;

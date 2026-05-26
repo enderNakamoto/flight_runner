@@ -24,9 +24,9 @@ export interface GameEntry {
 
 export const GAMES: GameEntry[] = [
   {
-    // Slug stays "flight_scroll" so existing links + the repo name keep
-    // working; the display title is what the player sees.
-    slug: "flight_scroll",
+    // URL slug = display name. Repo + package names (flight_scroll etc.)
+    // intentionally keep their original identifiers.
+    slug: "birdstrike",
     title: "BIRDSTRIKE",
     blurb: "Dodge birds. Manage fuel. Land in one piece.",
     description:
