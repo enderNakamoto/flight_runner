@@ -67,8 +67,8 @@ const STYLE = `
   }
 
   #fs-landing h1 {
-    font-size: 32px;
-    line-height: 1.2;
+    font-size: 36px;
+    line-height: 1.05;
     margin: 0 0 18px;
     letter-spacing: 1px;
     color: #fff;
@@ -76,6 +76,13 @@ const STYLE = `
       3px 0 0 #5b3aa8,
       6px 3px 0 #2c5dd0,
       9px 6px 0 rgba(0,0,0,0.4);
+  }
+  #fs-landing h1 .sub {
+    font-size: 22px;
+    color: var(--accent);
+    text-shadow:
+      3px 0 0 #6b4a08,
+      6px 3px 0 rgba(0,0,0,0.4);
   }
 
   #fs-landing .subtitle {
@@ -189,7 +196,8 @@ const STYLE = `
   #fs-landing .footer a:hover { text-decoration: underline; }
 
   @media (max-width: 560px) {
-    #fs-landing h1 { font-size: 22px; }
+    #fs-landing h1 { font-size: 24px; }
+    #fs-landing h1 .sub { font-size: 16px; }
     #fs-landing .subtitle { font-size: 9px; margin-bottom: 36px; }
     #fs-landing .inner { padding: 36px 16px 64px; }
     #fs-landing .card h2 { font-size: 12px; }
@@ -255,9 +263,9 @@ export function mountLanding(): void {
   const inner = document.createElement("div");
   inner.className = "inner";
   inner.innerHTML = `
-    <h1>ENDER ARCADE</h1>
+    <h1>PROOFWORKS<br><span class="sub">ARCADE</span></h1>
     <p class="subtitle">
-      pixel-art games · <span class="accent">zk-verified</span> high scores on stellar
+      pixel-art games · <span class="accent">verified</span> high scores on stellar
     </p>
     <div class="grid" id="fs-landing-grid"></div>
     <div class="footer">

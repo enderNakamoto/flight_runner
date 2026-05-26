@@ -12,11 +12,13 @@ export interface GameEntry {
 
 export const GAMES: GameEntry[] = [
   {
+    // Slug stays "flight_scroll" so existing links + the repo name keep
+    // working; the display title is what the player sees.
     slug: "flight_scroll",
-    title: "FLIGHT SCROLL",
-    blurb: "Side-scrolling dogfight. ZK-verified high scores.",
+    title: "BIRDSTRIKE",
+    blurb: "Dodge birds. Manage fuel. Land in one piece.",
     description:
-      "Steer your propeller plane through five stages of pillars, birds, drones, jets, and UFOs. Run out of fuel and you die. Submit your best run on-chain — every score is a proven replay.",
+      "Steer your propeller plane through five escalating stages of pillars, birds, drones, jets, and UFOs. Refuel mid-flight or fall out of the sky. Submit your best run on-chain — every score is a proven replay.",
     thumb: "/assets/plane.png",
     status: "live",
   },
