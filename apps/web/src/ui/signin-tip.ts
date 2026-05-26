@@ -8,7 +8,7 @@
 // to ignore, easy to engage with.
 
 import { connect, getAddress, onWalletChange } from "../chain/wallet.js";
-import { getLatestTranscript, onTranscriptChange } from "../chain/transcript-buffer.js";
+import { getLatestRun, onRunChange } from "../chain/transcript-buffer.js";
 
 const STYLE = `
   #fs-signin-tip {
@@ -94,11 +94,11 @@ export function mountSigninTip(): void {
   function refresh() {
     if (dismissed) return hide();
     if (getAddress()) return hide();              // signed in already
-    if (getLatestTranscript()) return hide();     // round finished, submit-ui takes over
+    if (getLatestRun()) return hide();           // round finished, submit-ui takes over
     show();
   }
 
   onWalletChange(refresh);
-  onTranscriptChange(refresh);
+  onRunChange(refresh);
   refresh();
 }

@@ -61,7 +61,7 @@ import {
   type GameState,
 } from "@flight/sim";
 import { backgroundFor } from "../backgrounds.js";
-import { setLatestTranscript } from "../chain/transcript-buffer.js";
+import { setLatestRun } from "../chain/transcript-buffer.js";
 import { INTERMISSION_DURATION_MS, INTERMISSIONS } from "../intermissions.js";
 import { INTRO_BODY, INTRO_HEADER, INTRO_HINT, INTRO_TITLE_TEMPLATE } from "../intro.js";
 import { OUTROS, REASON_TAG, SENTINEL_PROTOCOL_URL } from "../outros.js";
@@ -1255,11 +1255,17 @@ export class PlayScene extends Phaser.Scene {
 
   // Hand the captured run to the chain panel via a module-level buffer so
   // the player can submit it to the relay without a manual .bin upload.
+  // Includes score + ticks so submit-ui can decide whether the run is
+  // worth offering to submit at all.
   private publishTranscriptBuffer(): void {
     if (this.transcriptLen === 0) return;
     const buttons = this.transcriptBuf.subarray(0, this.transcriptLen);
     const bin = encodeTranscript(this.seed, buttons);
-    setLatestTranscript(new Uint8Array(bin));
+    setLatestRun({
+      bytes: new Uint8Array(bin),
+      score: this.state.score,
+      ticks: this.state.tick,
+    });
   }
 
   private makeSeed(): number {

@@ -16,6 +16,7 @@ import { mountLanding } from "./landing/landing.js";
 import { mountAllLeaderboards, mountGameLeaderboard } from "./landing/leaderboard.js";
 import { BootScene } from "./scenes/BootScene.js";
 import { PlayScene } from "./scenes/PlayScene.js";
+import { mountBackLink } from "./ui/back-link.js";
 import { mountSigninTip } from "./ui/signin-tip.js";
 import { mountSubmitUI } from "./ui/submit-ui.js";
 
@@ -34,6 +35,7 @@ restoreWallet();
 const segments = window.location.pathname.split("/").filter(Boolean);
 
 function bootGame() {
+  mountBackLink();
   mountSigninTip();
   mountSubmitUI();
   new Phaser.Game({

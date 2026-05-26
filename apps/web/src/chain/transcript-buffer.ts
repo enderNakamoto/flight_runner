@@ -1,26 +1,32 @@
-// Module-level buffer for the most recent transcript captured during a
-// run. PlayScene writes here at game over; the wallet panel reads it to
-// build a relay submission.
+// Module-level buffer for the most recent run captured during play.
+// PlayScene writes here at game over; the submit overlay and any other
+// chain UI read it to decide what to show.
 
-let latest: Uint8Array | null = null;
+export interface CapturedRun {
+  bytes: Uint8Array;   // raw .bin transcript (seed + buttons)
+  score: number;       // final score
+  ticks: number;       // ticks survived
+}
 
-const subscribers = new Set<(t: Uint8Array | null) => void>();
+let latest: CapturedRun | null = null;
 
-export function setLatestTranscript(bytes: Uint8Array): void {
-  latest = bytes;
+const subscribers = new Set<(r: CapturedRun | null) => void>();
+
+export function setLatestRun(r: CapturedRun): void {
+  latest = r;
   for (const s of subscribers) s(latest);
 }
 
-export function clearLatestTranscript(): void {
+export function clearLatestRun(): void {
   latest = null;
   for (const s of subscribers) s(null);
 }
 
-export function getLatestTranscript(): Uint8Array | null {
+export function getLatestRun(): CapturedRun | null {
   return latest;
 }
 
-export function onTranscriptChange(cb: (t: Uint8Array | null) => void): () => void {
+export function onRunChange(cb: (r: CapturedRun | null) => void): () => void {
   subscribers.add(cb);
   cb(latest);
   return () => subscribers.delete(cb);

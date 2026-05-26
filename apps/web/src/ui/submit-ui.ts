@@ -23,11 +23,34 @@ import {
 } from "../chain/pending-proof.js";
 import { proveTranscript, type ProveResult } from "../chain/relay.js";
 import {
-  clearLatestTranscript,
-  getLatestTranscript,
-  onTranscriptChange,
+  clearLatestRun,
+  getLatestRun,
+  onRunChange,
+  type CapturedRun,
 } from "../chain/transcript-buffer.js";
 import { connect, getAddress } from "../chain/wallet.js";
+
+// Slug → localStorage key used by that game's in-HUD BEST overlay.
+// Mirror of the same map in chain/score-sync.ts. Used here to decide
+// whether the just-played score is even worth offering to submit.
+const BEST_STORAGE_KEYS: Record<string, string> = {
+  birdstrike: "flight_scroll:best",
+};
+
+function localBestFor(slug: string): number {
+  const key = BEST_STORAGE_KEYS[slug];
+  if (!key) return 0;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? Number.parseInt(raw, 10) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function currentGameSlug(): string {
+  return window.location.pathname.split("/").filter(Boolean)[0] ?? "";
+}
 
 const STYLE = `
   @keyframes fs-pulse {
@@ -163,14 +186,26 @@ export function mountSubmitUI(): void {
   function refreshButtonVisibility() {
     if (modal) return; // don't fight the modal's open state
     const pending = getPendingProof();
-    const transcript = getLatestTranscript();
+    const run = getLatestRun();
     if (pending) {
       showButton("🏆 Sign Pending", `${ageMin(pending.proved_at)} min`);
-    } else if (transcript) {
-      showButton("🏆 Submit Score");
-    } else {
-      hideButton();
+      return;
     }
+    if (run) {
+      // Only offer to submit if the just-played score is at least equal
+      // to the local best. localStorage best is hydrated from chain at
+      // sign-in (see chain/score-sync.ts) so this compares against the
+      // player's actual on-chain personal-best when signed in. Strictly
+      // lower → no button, no wasted prove + tx.
+      const localBest = localBestFor(currentGameSlug());
+      if (run.score < localBest) {
+        hideButton();
+        return;
+      }
+      showButton("🏆 Submit Score");
+      return;
+    }
+    hideButton();
   }
 
   function closeModal() {
@@ -246,7 +281,7 @@ export function mountSubmitUI(): void {
         const { result } = await tx.signAndSend();
         (result as { unwrap: () => void }).unwrap();
         clearPendingProof();
-        clearLatestTranscript();
+        clearLatestRun();
         setStatus(`✅ Submitted. score=${p.score} ticks=${p.ticks_survived}`, "ok");
         hideButton();
         renderAction();
@@ -258,7 +293,7 @@ export function mountSubmitUI(): void {
         // working correctly — surface it nicely and drop the proof.
         if (/this is a read call/i.test(m)) {
           clearPendingProof();
-          clearLatestTranscript();
+          clearLatestRun();
           setStatus(
             `Score ${p.score} didn't beat your on-chain best — nothing to submit. Try a better run.`,
             "ok",
@@ -305,7 +340,8 @@ export function mountSubmitUI(): void {
       }
     }
 
-    async function proveThenCache(transcript: Uint8Array, addr: string) {
+    async function proveThenCache(run: CapturedRun, addr: string) {
+      const transcript = run.bytes;
       setStatus("Proving on the relay (this takes a few minutes) …");
       const r: ProveResult = await proveTranscript(addr, transcript);
       if (!r.ok) {
@@ -321,7 +357,7 @@ export function mountSubmitUI(): void {
         proved_at: Date.now(),
       };
       setPendingProof(p);
-      clearLatestTranscript();
+      clearLatestRun();
       setStatus(`Proof built (score=${p.score}). Sign with your wallet to submit.`, "ok");
       renderAction();
     }
@@ -330,7 +366,7 @@ export function mountSubmitUI(): void {
       actionEl.innerHTML = "";
       const addr = getAddress();
       const pending = getPendingProof();
-      const transcript = getLatestTranscript();
+      const run = getLatestRun();
 
       if (pending) {
         titleEl.textContent = pending.player_strkey === addr
@@ -371,9 +407,9 @@ export function mountSubmitUI(): void {
         return;
       }
 
-      if (transcript) {
+      if (run) {
         titleEl.textContent = "Submit your score on-chain";
-        subEl.textContent = `${transcript.length} byte transcript · ${CONFIG.networkPassphrase.startsWith("Test") ? "testnet" : "mainnet"}`;
+        subEl.textContent = `score ${run.score} · ticks ${run.ticks} · ${CONFIG.networkPassphrase.startsWith("Test") ? "testnet" : "mainnet"}`;
         if (!CONFIG.relayUrl) {
           actionEl.innerHTML = `<span class="err">VITE_RELAY_URL not set — proving unavailable.</span>`;
           return;
@@ -384,7 +420,7 @@ export function mountSubmitUI(): void {
         proveBtn.onclick = async () => {
           proveBtn.disabled = true;
           try {
-            await proveThenCache(transcript, addr);
+            await proveThenCache(run, addr);
           } finally {
             proveBtn.disabled = false;
           }
@@ -402,7 +438,7 @@ export function mountSubmitUI(): void {
   }
 
   // Show/hide the floating button when either source of work changes.
-  onTranscriptChange(refreshButtonVisibility);
+  onRunChange(refreshButtonVisibility);
   onPendingProofChange(refreshButtonVisibility);
   refreshButtonVisibility();
 }
