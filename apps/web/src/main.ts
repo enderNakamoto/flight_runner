@@ -1,25 +1,40 @@
+// Routing:
+//   /                      → landing page (lists games)
+//   /flight_scroll         → the flight_scroll Phaser game
+//   /<other_game_slug>     → 404 → falls back to landing
+//
+// A direct link straight to a game slug skips the landing entirely.
+
 import Phaser from "phaser";
 import { WORLD_HEIGHT, WORLD_WIDTH } from "@flight/sim";
+import { findGame } from "./landing/games.js";
+import { mountLanding } from "./landing/landing.js";
 import { BootScene } from "./scenes/BootScene.js";
 import { PlayScene } from "./scenes/PlayScene.js";
 import { mountSubmitUI } from "./ui/submit-ui.js";
 
-// Submit UI lazily renders itself once a transcript is captured at game
-// over. No chain-related DOM lives on the page until that happens.
-mountSubmitUI();
+const path = window.location.pathname.replace(/^\/+|\/+$/g, ""); // trim slashes
+const game = findGame(path);
 
-new Phaser.Game({
-  type: Phaser.AUTO,
-  parent: "game",
-  width: WORLD_WIDTH,
-  height: WORLD_HEIGHT,
-  backgroundColor: "#1a2735",
-  // Pixel-art assets — nearest-neighbour filtering removes the white halo
-  // that linear filtering would produce around transparent sprite edges.
-  pixelArt: true,
-  scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
-  },
-  scene: [BootScene, PlayScene],
-});
+if (game?.slug === "flight_scroll") {
+  // Boot the game. Submit overlay listens for game-over events and
+  // renders itself lazily.
+  mountSubmitUI();
+
+  new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: "game",
+    width: WORLD_WIDTH,
+    height: WORLD_HEIGHT,
+    backgroundColor: "#1a2735",
+    pixelArt: true,
+    scale: {
+      mode: Phaser.Scale.FIT,
+      autoCenter: Phaser.Scale.CENTER_BOTH,
+    },
+    scene: [BootScene, PlayScene],
+  });
+} else {
+  // Anything else — landing.
+  mountLanding();
+}
