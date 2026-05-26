@@ -1,26 +1,25 @@
 // Routing:
-//   /                      → landing page (lists games)
-//   /flight_scroll         → the flight_scroll Phaser game
-//   /<other_game_slug>     → 404 → falls back to landing
+//   /                              → landing page
+//   /leaderboard                   → all-games leaderboard index
+//   /<slug>                        → that game (only flight_scroll today)
+//   /<slug>/leaderboard            → that game's leaderboard
+//   anything else                  → falls through to landing
 //
-// A direct link straight to a game slug skips the landing entirely.
+// Direct links to /<slug> skip the landing entirely.
 
 import Phaser from "phaser";
 import { WORLD_HEIGHT, WORLD_WIDTH } from "@flight/sim";
 import { findGame } from "./landing/games.js";
 import { mountLanding } from "./landing/landing.js";
+import { mountAllLeaderboards, mountGameLeaderboard } from "./landing/leaderboard.js";
 import { BootScene } from "./scenes/BootScene.js";
 import { PlayScene } from "./scenes/PlayScene.js";
 import { mountSubmitUI } from "./ui/submit-ui.js";
 
-const path = window.location.pathname.replace(/^\/+|\/+$/g, ""); // trim slashes
-const game = findGame(path);
+const segments = window.location.pathname.split("/").filter(Boolean);
 
-if (game?.slug === "flight_scroll") {
-  // Boot the game. Submit overlay listens for game-over events and
-  // renders itself lazily.
+function bootGame() {
   mountSubmitUI();
-
   new Phaser.Game({
     type: Phaser.AUTO,
     parent: "game",
@@ -28,13 +27,23 @@ if (game?.slug === "flight_scroll") {
     height: WORLD_HEIGHT,
     backgroundColor: "#1a2735",
     pixelArt: true,
-    scale: {
-      mode: Phaser.Scale.FIT,
-      autoCenter: Phaser.Scale.CENTER_BOTH,
-    },
+    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
     scene: [BootScene, PlayScene],
   });
+}
+
+if (segments.length === 0) {
+  mountLanding();
+} else if (segments.length === 1 && segments[0] === "leaderboard") {
+  mountAllLeaderboards();
+} else if (segments.length === 1) {
+  const game = findGame(segments[0]!);
+  if (game && game.status === "live") bootGame();
+  else mountLanding();
+} else if (segments.length === 2 && segments[1] === "leaderboard") {
+  const game = findGame(segments[0]!);
+  if (game) mountGameLeaderboard(game);
+  else mountLanding();
 } else {
-  // Anything else — landing.
   mountLanding();
 }

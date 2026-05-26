@@ -63,12 +63,37 @@ const STYLE = `
     opacity: 0.7;
   }
 
+  #fs-landing .topnav {
+    position: relative;
+    z-index: 3;
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 20px 24px 0;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 18px;
+  }
+  #fs-landing .topnav a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 6px 10px;
+    border: 1px solid transparent;
+    transition: color 0.1s, border-color 0.1s;
+  }
+  #fs-landing .topnav a:hover {
+    color: var(--accent);
+    border-color: var(--border);
+  }
+
   #fs-landing .inner {
     position: relative;
     z-index: 2;
     max-width: 880px;
     margin: 0 auto;
-    padding: 64px 24px 96px;
+    padding: 48px 24px 96px;
     text-align: center;
   }
 
@@ -158,6 +183,29 @@ const STYLE = `
     max-height: 100%;
   }
 
+  #fs-landing .card .perk {
+    background: linear-gradient(90deg, #b48a00 0%, #f5d04b 50%, #b48a00 100%);
+    color: #20140a;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 12px;
+    margin: -20px -20px 16px;
+    border-bottom: 2px solid #6b4a08;
+    letter-spacing: 0.3px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  #fs-landing .card .perk::before {
+    content: '★';
+    font-size: 14px;
+  }
+  #fs-landing .card .perk a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
   #fs-landing .card h2 {
     font-family: var(--font-pixel);
     font-size: 16px;
@@ -179,15 +227,35 @@ const STYLE = `
     margin-bottom: 18px;
   }
 
-  #fs-landing .card .play {
+  #fs-landing .card .actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  #fs-landing .card .play,
+  #fs-landing .card .leaderboard {
     display: inline-block;
-    background: linear-gradient(135deg, #5b3aa8 0%, #2c5dd0 100%);
-    color: #fff;
+    text-decoration: none;
     padding: 10px 16px;
-    border: 2px solid #8a6df0;
+    border-width: 2px;
+    border-style: solid;
     font-family: var(--font-pixel);
     font-size: 11px;
     letter-spacing: 0.5px;
+  }
+  #fs-landing .card .play {
+    background: linear-gradient(135deg, #5b3aa8 0%, #2c5dd0 100%);
+    color: #fff;
+    border-color: #8a6df0;
+  }
+  #fs-landing .card .leaderboard {
+    background: transparent;
+    color: var(--accent);
+    border-color: var(--border);
+  }
+  #fs-landing .card .leaderboard:hover {
+    border-color: var(--accent);
   }
   #fs-landing .card.soon .play {
     background: #2a2f3f;
@@ -241,21 +309,36 @@ function makeStars(): HTMLElement {
 }
 
 function makeCard(g: GameEntry): HTMLElement {
-  const card = document.createElement("a");
+  // Outer card is a div now (not an <a>) so the leaderboard link inside
+  // doesn't conflict with the main card click target.
+  const card = document.createElement("div");
   card.className = `card ${g.status}`;
-  card.href = g.status === "live" ? `/${g.slug}` : "#";
-  if (g.status !== "live") {
-    card.onclick = (e) => e.preventDefault();
-  }
+
+  const perkHtml = g.perk
+    ? `<div class="perk">${
+        g.perk.url
+          ? `<a href="${g.perk.url}" target="_blank" rel="noopener">${g.perk.text}</a>`
+          : g.perk.text
+      }</div>`
+    : "";
+
+  const playHref = g.status === "live" ? `/${g.slug}` : "#";
+  const lbHref = `/${g.slug}/leaderboard`;
 
   card.innerHTML = `
+    ${perkHtml}
     <div class="thumb">
       <img src="${g.thumb}" alt="${g.title}" onerror="this.style.display='none'">
     </div>
     <h2>${g.title}</h2>
     <div class="blurb">${g.blurb}</div>
     <div class="desc">${g.description}</div>
-    <span class="play">${g.status === "live" ? "▶ PLAY" : "COMING SOON"}</span>
+    <div class="actions">
+      <a href="${playHref}" class="play"${g.status !== "live" ? ' onclick="event.preventDefault()"' : ""}>
+        ${g.status === "live" ? "▶ PLAY" : "COMING SOON"}
+      </a>
+      <a href="${lbHref}" class="leaderboard">📊 LEADERBOARD</a>
+    </div>
   `;
   return card;
 }
@@ -274,16 +357,23 @@ export function mountLanding(): void {
 
   root.appendChild(makeStars());
 
+  const nav = document.createElement("div");
+  nav.className = "topnav";
+  nav.innerHTML = `
+    <a href="/leaderboard">📊 LEADERBOARDS</a>
+  `;
+  root.appendChild(nav);
+
   const inner = document.createElement("div");
   inner.className = "inner";
   inner.innerHTML = `
     <h1>PROOFWORKS<br><span class="sub">ARCADE</span></h1>
     <p class="subtitle">
-      pixel-art games · <span class="accent">verified</span> high scores on stellar
+      <span class="accent">verified</span> high scores · on-chain
     </p>
     <div class="grid" id="fs-landing-grid"></div>
     <div class="footer">
-      proofs by risc zero · leaderboards on soroban · <a href="https://github.com/enderNakamoto/flight_runner" target="_blank">github</a>
+      leaderboards on stellar · <a href="https://github.com/enderNakamoto/flight_runner" target="_blank">github</a>
     </div>
   `;
   root.appendChild(inner);
