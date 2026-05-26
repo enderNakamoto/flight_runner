@@ -30,29 +30,44 @@ import {
 import { connect, getAddress } from "../chain/wallet.js";
 
 const STYLE = `
+  @keyframes fs-pulse {
+    0%, 100% { box-shadow: 0 8px 24px rgba(124, 92, 240, 0.4), 0 0 0 0 rgba(245, 208, 75, 0.55); }
+    50%      { box-shadow: 0 8px 24px rgba(124, 92, 240, 0.5), 0 0 0 14px rgba(245, 208, 75, 0); }
+  }
   #fs-submit-btn {
     position: fixed;
-    right: 16px;
-    bottom: 16px;
+    left: 50%;
+    bottom: 28px;
+    transform: translateX(-50%);
     z-index: 90;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
-    font-size: 13px;
-    padding: 10px 14px;
-    background: #1f2a44;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    padding: 16px 32px;
+    min-width: 280px;
+    background: linear-gradient(135deg, #5b3aa8 0%, #2c5dd0 100%);
     color: #fff;
-    border: 1px solid #4a6da8;
-    border-radius: 6px;
+    border: 2px solid #8a6df0;
+    border-radius: 10px;
     cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    animation: fs-pulse 2.2s ease-in-out infinite;
+    transition: transform 0.1s ease;
   }
-  #fs-submit-btn:hover { background: #2c3b62; }
+  #fs-submit-btn:hover {
+    background: linear-gradient(135deg, #6d4ac0 0%, #3a72e8 100%);
+    transform: translateX(-50%) translateY(-1px);
+  }
+  #fs-submit-btn:active { transform: translateX(-50%) translateY(0); }
   #fs-submit-btn .badge {
-    margin-left: 8px;
+    margin-left: 10px;
     background: #f5d04b;
     color: #20140a;
-    padding: 1px 6px;
-    border-radius: 8px;
-    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    vertical-align: middle;
   }
   #fs-submit-modal {
     position: fixed;
