@@ -11,8 +11,11 @@ members = [
 
 # Guest is built for riscv32im-risc0-zkvm-elf — kept out of this workspace
 # (it has its own empty [workspace] table in services/prover/guest/Cargo.toml).
+# Soroban contracts are a third workspace (own release profile w/ lto+panic=abort,
+# wasm32-unknown-unknown target); built independently from contracts/.
 exclude = [
   "services/prover/guest",
+  "contracts",
 ]
 
 [workspace.package]

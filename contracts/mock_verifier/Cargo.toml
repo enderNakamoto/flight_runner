@@ -1,0 +1,16 @@
+[package]
+name = "mock_verifier"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "No-op RISC Zero verifier stand-in. Used only in game_hub tests + early testnet deploys before the real Nethermind verifier is wired."
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

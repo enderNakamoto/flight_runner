@@ -1,0 +1,17 @@
+[package]
+name = "game_hub"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Multi-game Soroban host: admin registers games, players start runs and settle RISC Zero proofs, contract stores personal-best score per (game_id, player)."
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+mock_verifier = { path = "../mock_verifier" }

@@ -1,0 +1,29 @@
+# Soroban contracts live in their own workspace — separate from the prover
+# workspace at the root because contracts target wasm32-unknown-unknown with
+# a distinct release profile (lto, panic=abort, opt-level="z"). The root
+# Cargo.toml excludes this directory so `cargo build` at the repo root only
+# touches the prover stack.
+
+[workspace]
+resolver = "2"
+members = [
+  "game_hub",
+  "mock_verifier",
+]
+
+[workspace.dependencies]
+soroban-sdk = "25"
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
+
+[profile.release-with-logs]
+inherits = "release"
+debug-assertions = true
