@@ -50,6 +50,14 @@ struct Cli {
     #[arg(long)]
     local: bool,
 
+    /// Skip RISC Zero entirely — run the sim natively to compute the score,
+    /// emit a correctly-shaped 76-byte journal and a 260-byte zero seal.
+    /// Lets the on-chain submit_score path land while the contract is
+    /// configured with MockVerifier. Replace with --local or default
+    /// Groth16 the moment the real verifier is wired.
+    #[arg(long)]
+    stub_seal: bool,
+
     /// Where to write proof_artifacts.json (default: ./proof_artifacts.json).
     #[arg(short, long, default_value = "proof_artifacts.json")]
     out: PathBuf,
@@ -74,6 +82,10 @@ fn main() -> Result<()> {
         cli.player,
         hex::encode(player_pubkey)
     );
+
+    if cli.stub_seal {
+        return write_stub_artifacts(&cli, &transcript, player_pubkey);
+    }
 
     // Pack raw bytes into LE u32 words for the guest. div_ceil so the last
     // partial word gets zero-padded; the guest re-slices back to byte_len.
@@ -198,4 +210,59 @@ fn id_to_bytes(id: [u32; 8]) -> [u8; 32] {
         out[i * 4..i * 4 + 4].copy_from_slice(&w.to_le_bytes());
     }
     out
+}
+
+/// Skip RISC Zero entirely — run the sim natively to compute score/ticks,
+/// emit a correctly-shaped 76-byte journal and a 260-byte zero seal. Lets
+/// the on-chain submit_score path land while the contract uses MockVerifier
+/// (which accepts any seal content). Swap for real Groth16 the moment the
+/// Nethermind verifier is wired.
+fn write_stub_artifacts(
+    cli: &Cli,
+    transcript: &[u8],
+    player_pubkey: [u8; 32],
+) -> Result<()> {
+    eprintln!("[host] mode = stub-seal (NO ZK PROOF — only valid against MockVerifier)");
+    let r = flight_scroll_core::fp::run_streaming(transcript, player_pubkey)
+        .map_err(|e| anyhow!("run_streaming: {e}"))?;
+
+    let output = ProverOutput {
+        score: r.state.score,
+        ticks_survived: r.state.tick,
+        seed: r.seed,
+        player_pubkey: r.player_pubkey,
+        transcript_hash: r.transcript_hash,
+    };
+
+    let journal = output.to_journal_bytes();
+    let seal = vec![0u8; 260];
+    let image_id_bytes = id_to_bytes(FLIGHT_GUEST_ID);
+
+    let artifacts = json!({
+        "mode":     "stub",
+        "seal":     hex::encode(&seal),
+        "image_id": hex::encode(image_id_bytes),
+        "journal":  hex::encode(journal),
+        "output": {
+            "score":           output.score,
+            "ticks_survived":  output.ticks_survived,
+            "seed":            output.seed,
+            "player":          cli.player.clone(),
+            "player_pubkey":   hex::encode(output.player_pubkey),
+            "transcript_hash": hex::encode(output.transcript_hash),
+        }
+    });
+
+    let body = serde_json::to_string_pretty(&artifacts)? + "\n";
+    fs::write(&cli.out, body)
+        .with_context(|| format!("write {}", cli.out.display()))?;
+    eprintln!(
+        "[host] wrote {} (stub: 260 B zero seal, real 76 B journal)",
+        cli.out.display()
+    );
+    eprintln!(
+        "[host] score={} ticks={} seed=0x{:08x}",
+        output.score, output.ticks_survived, output.seed
+    );
+    Ok(())
 }

@@ -82,12 +82,17 @@ export async function handleProve(req: Request): Promise<Response> {
     await writeFile(transcriptPath, transcript);
     console.log(`[relay] proving for ${player_strkey} (${transcript.length} bytes)`);
 
+    const modeFlag: string[] =
+      CONFIG.proveMode === "stub" ? ["--stub-seal"] :
+      CONFIG.proveMode === "stark" ? ["--local"] :
+      [];
     const proc = Bun.spawn({
       cmd: [
         CONFIG.flightHostBin,
         transcriptPath,
         "--player",
         player_strkey,
+        ...modeFlag,
         "-o",
         proofPath,
       ],
