@@ -176,25 +176,32 @@ mod tests {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ProverOutput — 44-byte journal layout committed by the zkVM guest.
-// See spec/zk_risk_0_stellar.md §4.4. The contract decoders mirror this in
-// contracts/flight_scroll/src/lib.rs (Phase 5).
+// ProverOutput — 76-byte journal layout committed by the zkVM guest.
+// Mirrored on-chain in contracts/game_hub/src/lib.rs.
 //
 //   Offset  Size  Field             Encoding
 //     0      4    score             u32 LE
 //     4      4    ticks_survived    u32 LE
-//     8      4    seed              u32 LE
-//    12     32    transcript_hash   SHA-256 raw bytes
+//     8      4    seed              u32 LE  (player-chosen, NOT verified)
+//    12     32    player_pubkey     ED25519 public key (32 raw bytes)
+//    44     32    transcript_hash   SHA-256 raw bytes
+//
+// Player-binding model: the pubkey committed in the journal is the address
+// the contract credits the score to. No on-chain start_run is needed —
+// anyone can submit on behalf of anyone, the credit always flows to the
+// pubkey the proof committed. Bob can't claim Alice's proof for himself
+// because Alice's pubkey is baked in.
 // ─────────────────────────────────────────────────────────────────────────────
 
-pub const JOURNAL_BYTES: usize = 44;
-pub const PROVER_OUTPUT_WORDS: usize = 11; // JOURNAL_BYTES / 4
+pub const JOURNAL_BYTES: usize = 76;
+pub const PROVER_OUTPUT_WORDS: usize = 19; // JOURNAL_BYTES / 4
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProverOutput {
     pub score: u32,
     pub ticks_survived: u32,
     pub seed: u32,
+    pub player_pubkey: [u8; 32],
     pub transcript_hash: [u8; 32],
 }
 
@@ -214,15 +221,26 @@ impl std::fmt::Display for JournalError {
 impl std::error::Error for JournalError {}
 
 impl ProverOutput {
-    /// Pack as 11 little-endian u32 words for `env::commit_slice`.
+    /// Pack as 19 little-endian u32 words for `env::commit_slice`.
     pub fn to_journal_words(&self) -> [u32; PROVER_OUTPUT_WORDS] {
         let mut w = [0u32; PROVER_OUTPUT_WORDS];
         w[0] = self.score;
         w[1] = self.ticks_survived;
         w[2] = self.seed;
+        // pubkey at words 3..11 (32 bytes = 8 words)
         for i in 0..8 {
             let o = i * 4;
             w[3 + i] = u32::from_le_bytes([
+                self.player_pubkey[o],
+                self.player_pubkey[o + 1],
+                self.player_pubkey[o + 2],
+                self.player_pubkey[o + 3],
+            ]);
+        }
+        // transcript_hash at words 11..19 (32 bytes = 8 words)
+        for i in 0..8 {
+            let o = i * 4;
+            w[11 + i] = u32::from_le_bytes([
                 self.transcript_hash[o],
                 self.transcript_hash[o + 1],
                 self.transcript_hash[o + 2],
@@ -232,14 +250,15 @@ impl ProverOutput {
         w
     }
 
-    /// Flatten to the 44 raw journal bytes (host-side use; the guest commits
+    /// Flatten to the 76 raw journal bytes (host-side use; the guest commits
     /// words directly via `to_journal_words`).
     pub fn to_journal_bytes(&self) -> [u8; JOURNAL_BYTES] {
         let mut out = [0u8; JOURNAL_BYTES];
         out[0..4].copy_from_slice(&self.score.to_le_bytes());
         out[4..8].copy_from_slice(&self.ticks_survived.to_le_bytes());
         out[8..12].copy_from_slice(&self.seed.to_le_bytes());
-        out[12..44].copy_from_slice(&self.transcript_hash);
+        out[12..44].copy_from_slice(&self.player_pubkey);
+        out[44..76].copy_from_slice(&self.transcript_hash);
         out
     }
 
@@ -251,9 +270,11 @@ impl ProverOutput {
         let score = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         let ticks_survived = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
         let seed = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
+        let mut player_pubkey = [0u8; 32];
+        player_pubkey.copy_from_slice(&bytes[12..44]);
         let mut transcript_hash = [0u8; 32];
-        transcript_hash.copy_from_slice(&bytes[12..44]);
-        Ok(Self { score, ticks_survived, seed, transcript_hash })
+        transcript_hash.copy_from_slice(&bytes[44..76]);
+        Ok(Self { score, ticks_survived, seed, player_pubkey, transcript_hash })
     }
 }
 
@@ -267,6 +288,7 @@ mod journal_tests {
             score: 0x12345678,
             ticks_survived: 0xABCDEF01,
             seed: 0xDEADBEEF,
+            player_pubkey: [0x55; 32],
             transcript_hash: [0xAA; 32],
         };
         let bytes = o.to_journal_bytes();
@@ -277,18 +299,18 @@ mod journal_tests {
 
     #[test]
     fn words_match_bytes_layout() {
+        let mut pubkey = [0u8; 32];
+        for i in 0..32 { pubkey[i] = (i + 100) as u8; }
+        let mut hash = [0u8; 32];
+        for i in 0..32 { hash[i] = i as u8; }
         let o = ProverOutput {
             score: 1,
             ticks_survived: 2,
             seed: 3,
-            transcript_hash: {
-                let mut h = [0u8; 32];
-                for i in 0..32 { h[i] = i as u8; }
-                h
-            },
+            player_pubkey: pubkey,
+            transcript_hash: hash,
         };
         let words = o.to_journal_words();
-        // Reflatten words to bytes (LE) and assert they equal to_journal_bytes.
         let mut flat = [0u8; JOURNAL_BYTES];
         for (i, w) in words.iter().enumerate() {
             flat[i * 4..i * 4 + 4].copy_from_slice(&w.to_le_bytes());
@@ -299,25 +321,31 @@ mod journal_tests {
     #[test]
     fn from_journal_bytes_rejects_bad_len() {
         assert!(matches!(
-            ProverOutput::from_journal_bytes(&[0u8; 43]),
-            Err(JournalError::BadLen(43))
+            ProverOutput::from_journal_bytes(&[0u8; 75]),
+            Err(JournalError::BadLen(75))
+        ));
+        assert!(matches!(
+            ProverOutput::from_journal_bytes(&[0u8; 44]),
+            Err(JournalError::BadLen(44))
         ));
     }
 
-    /// Pin: a known journal hex string must decode to the expected fields.
-    /// Anchor against drift in the byte layout.
+    /// Pin: a known journal must decode to the expected fields. Anchor
+    /// against drift in the byte layout.
     #[test]
-    fn decode_pinned_hex() {
-        // score=1000 ticks=2000 seed=0xCAFEBABE hash=0x00..0x1F
+    fn decode_pinned_layout() {
         let mut bytes = [0u8; JOURNAL_BYTES];
         bytes[0..4].copy_from_slice(&1000u32.to_le_bytes());
         bytes[4..8].copy_from_slice(&2000u32.to_le_bytes());
         bytes[8..12].copy_from_slice(&0xCAFEBABE_u32.to_le_bytes());
-        for i in 0..32 { bytes[12 + i] = i as u8; }
+        for i in 0..32 { bytes[12 + i] = (i + 200) as u8; }   // pubkey filler
+        for i in 0..32 { bytes[44 + i] = i as u8; }            // hash filler
         let o = ProverOutput::from_journal_bytes(&bytes).unwrap();
         assert_eq!(o.score, 1000);
         assert_eq!(o.ticks_survived, 2000);
         assert_eq!(o.seed, 0xCAFEBABE);
+        assert_eq!(o.player_pubkey[0], 200);
+        assert_eq!(o.player_pubkey[31], 231);
         assert_eq!(o.transcript_hash[0], 0);
         assert_eq!(o.transcript_hash[31], 31);
     }

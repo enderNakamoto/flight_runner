@@ -157,6 +157,7 @@ use sha2::{Digest, Sha256};
 pub struct StreamResult {
     pub state: GameState,
     pub seed: u32,
+    pub player_pubkey: [u8; 32],
     pub transcript_hash: [u8; 32],
 }
 
@@ -185,7 +186,10 @@ impl std::error::Error for StreamError {}
 
 const VALID_BUTTON_MASK: u8 = 0b0000_1111;
 
-pub fn run_streaming(raw_bytes: &[u8]) -> Result<StreamResult, StreamError> {
+pub fn run_streaming(
+    raw_bytes: &[u8],
+    player_pubkey: [u8; 32],
+) -> Result<StreamResult, StreamError> {
     let decoded = decode_transcript(raw_bytes).map_err(StreamError::BadTranscript)?;
     let mut state: GameState = create_initial_state(decoded.seed, Stage::Common);
     for (i, &b) in decoded.buttons.iter().enumerate() {
@@ -204,6 +208,7 @@ pub fn run_streaming(raw_bytes: &[u8]) -> Result<StreamResult, StreamError> {
     Ok(StreamResult {
         state,
         seed: decoded.seed as u32,
+        player_pubkey,
         transcript_hash,
     })
 }
@@ -214,14 +219,16 @@ mod run_streaming_tests {
     use crate::transcript::encode_transcript;
     use crate::types::BTN_UP;
 
+    const TEST_PK: [u8; 32] = [0x11; 32];
+
     #[test]
     fn empty_transcript_produces_initial_state() {
         let buf = encode_transcript(42, &[]);
-        let r = run_streaming(&buf).unwrap();
+        let r = run_streaming(&buf, TEST_PK).unwrap();
         assert_eq!(r.seed, 42);
+        assert_eq!(r.player_pubkey, TEST_PK);
         assert_eq!(r.state.tick, 0);
         assert!(!r.state.game_over);
-        // SHA-256 of the 4 LE bytes of seed=42.
         let expected: [u8; 32] = Sha256::digest(&buf).into();
         assert_eq!(r.transcript_hash, expected);
     }
@@ -229,16 +236,15 @@ mod run_streaming_tests {
     #[test]
     fn replay_stops_on_game_over() {
         let buf = encode_transcript(1, &vec![BTN_UP; 200]);
-        let r = run_streaming(&buf).unwrap();
+        let r = run_streaming(&buf, TEST_PK).unwrap();
         assert!(r.state.game_over);
         assert!(r.state.tick < 200);
     }
 
     #[test]
     fn rejects_reserved_bits() {
-        // bit 4 is reserved.
         let buf = encode_transcript(1, &[0b0001_0000]);
-        let err = run_streaming(&buf).unwrap_err();
+        let err = run_streaming(&buf, TEST_PK).unwrap_err();
         assert!(matches!(
             err,
             StreamError::ReservedInputBitsSet { tick: 0, buttons: 0x10 }
@@ -247,7 +253,7 @@ mod run_streaming_tests {
 
     #[test]
     fn rejects_short_transcript() {
-        let err = run_streaming(&[0u8, 1]).unwrap_err();
+        let err = run_streaming(&[0u8, 1], TEST_PK).unwrap_err();
         assert!(matches!(err, StreamError::BadTranscript(_)));
     }
 }

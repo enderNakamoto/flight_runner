@@ -1,12 +1,13 @@
 //! zkVM guest — replays a transcript through the deterministic sim and
-//! commits a 44-byte journal (`ProverOutput`). See spec/zk_risk_0_stellar.md
-//! §5.2 for the matching input/output protocol.
+//! commits a 76-byte journal (`ProverOutput`). Mirrored on-chain in
+//! contracts/game_hub/src/lib.rs.
 //!
 //! Input wire format the host writes:
 //!   1) one u32 — byte length of the transcript payload
 //!   2) ceil(byte_len/4) u32 words — the transcript bytes packed LE
+//!   3) 8 u32 words — the player's 32-byte ED25519 pubkey (LE)
 //!
-//! Output: env::commit_slice of 11 u32 words = the 44-byte journal.
+//! Output: env::commit_slice of 19 u32 words = the 76-byte journal.
 
 #![no_main]
 
@@ -16,9 +17,8 @@ use risc0_zkvm::guest::env;
 
 risc0_zkvm::guest::entry!(main);
 
-/// Max transcript size we accept inside the guest.
-/// 9002 u32s ≈ 36 008 bytes ≈ 36 000 ticks @ 1 byte/tick + 8-byte header.
-/// Pad to 10 000 for headroom. Spec/zk_risk_0_stellar.md §4.3.
+/// Max transcript size we accept inside the guest. 10 000 u32 words ≈
+/// 40 000 bytes ≈ 39 996 ticks @ 1 byte/tick + 4-byte seed header.
 const MAX_INPUT_WORDS: usize = 10_000;
 
 fn main() {
@@ -35,12 +35,21 @@ fn main() {
     env::read_slice(&mut raw_words[..word_len]);
     let raw_bytes = &bytemuck::cast_slice::<u32, u8>(&raw_words[..word_len])[..byte_len];
 
-    let result = run_streaming(raw_bytes).expect("run_streaming");
+    // Player's 32-byte ED25519 pubkey, written as 8 LE u32 words after the
+    // transcript. The contract credits the high score to this pubkey.
+    let mut pubkey_words = [0u32; 8];
+    env::read_slice(&mut pubkey_words);
+    let pubkey_slice = bytemuck::cast_slice::<u32, u8>(&pubkey_words);
+    let mut player_pubkey = [0u8; 32];
+    player_pubkey.copy_from_slice(pubkey_slice);
+
+    let result = run_streaming(raw_bytes, player_pubkey).expect("run_streaming");
 
     let output = ProverOutput {
         score: result.state.score,
         ticks_survived: result.state.tick,
         seed: result.seed,
+        player_pubkey: result.player_pubkey,
         transcript_hash: result.transcript_hash,
     };
 

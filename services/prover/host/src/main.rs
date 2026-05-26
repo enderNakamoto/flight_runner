@@ -39,6 +39,12 @@ struct Cli {
     /// Path to the recorded transcript (`.bin` file from PlayScene's `T` key).
     transcript: PathBuf,
 
+    /// Player's Stellar strkey (G…). Decoded to a 32-byte ED25519 pubkey
+    /// and committed in the journal. The contract credits this pubkey
+    /// on `submit_score`.
+    #[arg(long)]
+    player: String,
+
     /// Produce a STARK receipt instead of Groth16. Faster but not on-chain
     /// submittable.
     #[arg(long)]
@@ -57,6 +63,18 @@ fn main() -> Result<()> {
     let byte_len = transcript.len() as u32;
     eprintln!("[host] transcript {} ({} bytes)", cli.transcript.display(), byte_len);
 
+    // Decode the player's Stellar strkey to a raw 32-byte ED25519 pubkey.
+    // The journal will commit these bytes; the contract credits the score
+    // to this pubkey.
+    let player_pk = stellar_strkey::ed25519::PublicKey::from_string(&cli.player)
+        .map_err(|e| anyhow!("invalid --player strkey '{}': {e}", cli.player))?;
+    let player_pubkey: [u8; 32] = player_pk.0;
+    eprintln!(
+        "[host] player {} → pubkey {}",
+        cli.player,
+        hex::encode(player_pubkey)
+    );
+
     // Pack raw bytes into LE u32 words for the guest. div_ceil so the last
     // partial word gets zero-padded; the guest re-slices back to byte_len.
     let word_len = transcript.len().div_ceil(4);
@@ -67,9 +85,22 @@ fn main() -> Result<()> {
         words[i] = u32::from_le_bytes(buf);
     }
 
+    // Pack pubkey as 8 LE u32 words — must match guest's read order.
+    let mut pubkey_words = [0u32; 8];
+    for i in 0..8 {
+        let o = i * 4;
+        pubkey_words[i] = u32::from_le_bytes([
+            player_pubkey[o],
+            player_pubkey[o + 1],
+            player_pubkey[o + 2],
+            player_pubkey[o + 3],
+        ]);
+    }
+
     let env = ExecutorEnv::builder()
         .write_slice(&[byte_len])
         .write_slice(&words)
+        .write_slice(&pubkey_words)
         .build()
         .map_err(|e| anyhow!("ExecutorEnv build: {e}"))?;
 
@@ -145,6 +176,8 @@ fn main() -> Result<()> {
             "score":           output.score,
             "ticks_survived":  output.ticks_survived,
             "seed":            output.seed,
+            "player":          cli.player.clone(),
+            "player_pubkey":   hex::encode(output.player_pubkey),
             "transcript_hash": hex::encode(output.transcript_hash),
         }
     });
