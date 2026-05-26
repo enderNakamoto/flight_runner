@@ -17,7 +17,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, Address, Bytes, BytesN, Env, String,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN,
+    Env, String,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -117,7 +118,21 @@ pub struct HighScoreEntry {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Contract — slice 1 stubs. Slices 2–3 fill in the bodies.
+// Internal helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Loads the admin from instance storage. Returns `NotInitialized` if
+/// `initialize` hasn't been called yet. Caller must follow with
+/// `admin.require_auth()` if the function requires admin signing.
+fn require_admin(env: &Env) -> Result<Address, Error> {
+    env.storage()
+        .instance()
+        .get::<DataKey, Address>(&DataKey::Admin)
+        .ok_or(Error::NotInitialized)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Contract — admin functions are live in slice 2; player flow lands in slice 3.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[contract]
@@ -127,33 +142,90 @@ pub struct GameHub;
 impl GameHub {
     // ── Admin ────────────────────────────────────────────────────────────
 
-    pub fn initialize(_env: Env, _admin: Address, _verifier: Address) -> Result<(), Error> {
-        Err(Error::NotInitialized) // stub — slice 2
+    /// One-shot setup. The future admin must sign the tx (`require_auth`)
+    /// so an arbitrary third party can't front-run init and seize the contract.
+    pub fn initialize(env: Env, admin: Address, verifier: Address) -> Result<(), Error> {
+        if env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::AlreadyInitialized);
+        }
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&DataKey::Verifier, &verifier);
+        env.storage().instance().set(&DataKey::RunCounter, &0u64);
+        env.events()
+            .publish((symbol_short!("init"),), (admin, verifier));
+        Ok(())
     }
 
+    /// Register a new game. Admin-provided id (so clients can hardcode
+    /// well-known IDs); rejects on collision. Initial `paused = false`.
     pub fn add_game(
-        _env: Env,
-        _game_id: u32,
-        _image_id: BytesN<32>,
-        _name: String,
+        env: Env,
+        game_id: u32,
+        image_id: BytesN<32>,
+        name: String,
     ) -> Result<(), Error> {
-        Err(Error::NotInitialized) // stub — slice 2
+        let admin = require_admin(&env)?;
+        admin.require_auth();
+        if env.storage().persistent().has(&DataKey::Game(game_id)) {
+            return Err(Error::GameAlreadyExists);
+        }
+        let meta = GameMeta {
+            image_id: image_id.clone(),
+            name,
+            paused: false,
+        };
+        env.storage().persistent().set(&DataKey::Game(game_id), &meta);
+        env.events()
+            .publish((symbol_short!("addgame"), game_id), image_id);
+        Ok(())
     }
 
-    pub fn set_image_id(
-        _env: Env,
-        _game_id: u32,
-        _new_image_id: BytesN<32>,
-    ) -> Result<(), Error> {
-        Err(Error::NotInitialized) // stub — slice 2
+    /// Rotate the pinned image_id for a game — used when the sim is updated
+    /// and a new guest ELF is shipped. Old in-flight proofs (with the old
+    /// image_id) will start failing `settle_run` until they get re-proven.
+    /// Coordinate rotations with low player activity.
+    pub fn set_image_id(env: Env, game_id: u32, new_image_id: BytesN<32>) -> Result<(), Error> {
+        let admin = require_admin(&env)?;
+        admin.require_auth();
+        let mut meta: GameMeta = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Game(game_id))
+            .ok_or(Error::GameNotFound)?;
+        meta.image_id = new_image_id.clone();
+        env.storage().persistent().set(&DataKey::Game(game_id), &meta);
+        env.events()
+            .publish((symbol_short!("setimg"), game_id), new_image_id);
+        Ok(())
     }
 
-    pub fn set_paused(_env: Env, _game_id: u32, _paused: bool) -> Result<(), Error> {
-        Err(Error::NotInitialized) // stub — slice 2
+    /// Per-game kill switch. When paused, `start_run` and `settle_run`
+    /// reject. Existing in-flight runs are unaffected until the player
+    /// tries to settle them.
+    pub fn set_paused(env: Env, game_id: u32, paused: bool) -> Result<(), Error> {
+        let admin = require_admin(&env)?;
+        admin.require_auth();
+        let mut meta: GameMeta = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Game(game_id))
+            .ok_or(Error::GameNotFound)?;
+        meta.paused = paused;
+        env.storage().persistent().set(&DataKey::Game(game_id), &meta);
+        env.events()
+            .publish((symbol_short!("paused"), game_id), paused);
+        Ok(())
     }
 
-    pub fn rotate_admin(_env: Env, _new_admin: Address) -> Result<(), Error> {
-        Err(Error::NotInitialized) // stub — slice 2
+    /// Hand the admin role to a new address. Current admin must auth.
+    pub fn rotate_admin(env: Env, new_admin: Address) -> Result<(), Error> {
+        let admin = require_admin(&env)?;
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        env.events()
+            .publish((symbol_short!("rotadmin"),), (admin, new_admin));
+        Ok(())
     }
 
     // ── Player flow ──────────────────────────────────────────────────────
@@ -181,8 +253,8 @@ impl GameHub {
         None // stub — slice 3
     }
 
-    pub fn get_game(_env: Env, _game_id: u32) -> Option<GameMeta> {
-        None // stub — slice 3
+    pub fn get_game(env: Env, game_id: u32) -> Option<GameMeta> {
+        env.storage().persistent().get(&DataKey::Game(game_id))
     }
 
     pub fn get_run(_env: Env, _run_id: u64) -> Option<RunData> {
