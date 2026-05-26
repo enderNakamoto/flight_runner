@@ -1,20 +1,21 @@
-// Relay HTTP client — one call: POST /api/submit-score. Synchronous-ish:
-// the request stays open while the relay proves + submits. Returns the
-// on-chain tx hash on success or a structured error.
+// Relay HTTP client — one call: POST /api/prove. The relay runs
+// flight-host and returns the proof artifacts; it does NOT touch the
+// chain. The browser's wallet signs and submits submit_score itself.
 
 import { CONFIG } from "./config.js";
 
-export interface SubmitOk {
+export interface ProveOk {
   ok: true;
-  tx_hash: string;
+  seal_hex: string;
+  journal_hex: string;
   score?: number;
   ticks_survived?: number;
 }
-export interface SubmitErr {
+export interface ProveErr {
   ok: false;
   error: string;
 }
-export type SubmitResult = SubmitOk | SubmitErr;
+export type ProveResult = ProveOk | ProveErr;
 
 function requireRelayUrl(): string {
   if (!CONFIG.relayUrl) {
@@ -29,11 +30,11 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
-export async function submitScore(
+export async function proveTranscript(
   playerStrkey: string,
   transcript: Uint8Array,
-): Promise<SubmitResult> {
-  const url = `${requireRelayUrl()}/api/submit-score`;
+): Promise<ProveResult> {
+  const url = `${requireRelayUrl()}/api/prove`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -42,6 +43,5 @@ export async function submitScore(
       transcript_b64: bytesToBase64(transcript),
     }),
   });
-  const json = (await res.json()) as SubmitResult;
-  return json;
+  return (await res.json()) as ProveResult;
 }

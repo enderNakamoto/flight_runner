@@ -1,16 +1,27 @@
-// Submit UI — invisible until the player has a fresh run to submit.
+// Submit UI — invisible until the player has either:
+//   (a) a fresh transcript from the most recent game over, or
+//   (b) a pending proof in localStorage waiting to be signed.
 //
-// Flow:
-//   1. PlayScene publishes the transcript at game over (transcript-buffer)
-//   2. A small floating "Submit Score" button fades in
-//   3. Player clicks → modal opens with connect-wallet + submit
-//   4. Modal handles wallet connect → relay POST → success/error
-//   5. On success, modal stays open showing the tx hash; player closes it
-//
-// Anything chain-related stays hidden until the player chooses to engage.
+// Flow when the player engages:
+//   1. Modal opens with whichever applies — a fresh transcript to prove,
+//      or a pending proof to sign.
+//   2. Prove path: POST transcript to relay (5–25 min). On success, the
+//      proof is cached in localStorage and the modal switches to the
+//      sign path. The player can close the tab and come back.
+//   3. Sign path: connect wallet → wallet signs submit_score → tx lands.
+//   4. On success, the pending proof + transcript buffer are cleared.
 
+import { Buffer } from "buffer";
 import { CONFIG } from "../chain/config.js";
-import { submitScore, type SubmitResult } from "../chain/relay.js";
+import { getClient } from "../chain/game-hub.js";
+import {
+  clearPendingProof,
+  getPendingProof,
+  onPendingProofChange,
+  setPendingProof,
+  type PendingProof,
+} from "../chain/pending-proof.js";
+import { proveTranscript, type ProveResult } from "../chain/relay.js";
 import {
   clearLatestTranscript,
   getLatestTranscript,
@@ -35,6 +46,14 @@ const STYLE = `
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
   }
   #fs-submit-btn:hover { background: #2c3b62; }
+  #fs-submit-btn .badge {
+    margin-left: 8px;
+    background: #f5d04b;
+    color: #20140a;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 10px;
+  }
   #fs-submit-modal {
     position: fixed;
     inset: 0;
@@ -51,8 +70,8 @@ const STYLE = `
     border: 1px solid #3a4a6b;
     border-radius: 8px;
     padding: 20px 24px;
-    min-width: 320px;
-    max-width: 480px;
+    min-width: 360px;
+    max-width: 520px;
     font-size: 13px;
   }
   #fs-submit-modal h2 {
@@ -99,17 +118,24 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+function ageMin(ms: number): number {
+  return Math.max(0, Math.round((Date.now() - ms) / 60000));
+}
+
 export function mountSubmitUI(): void {
   injectStyle();
 
   let btn: HTMLButtonElement | null = null;
   let modal: HTMLDivElement | null = null;
 
-  function showButton() {
-    if (btn) return;
+  function showButton(label: string, badge?: string) {
+    if (btn) {
+      btn.innerHTML = `${label}${badge ? `<span class="badge">${badge}</span>` : ""}`;
+      return;
+    }
     btn = document.createElement("button");
     btn.id = "fs-submit-btn";
-    btn.textContent = "🏆 Submit Score";
+    btn.innerHTML = `${label}${badge ? `<span class="badge">${badge}</span>` : ""}`;
     btn.onclick = openModal;
     document.body.appendChild(btn);
   }
@@ -119,23 +145,32 @@ export function mountSubmitUI(): void {
     btn = null;
   }
 
+  function refreshButtonVisibility() {
+    if (modal) return; // don't fight the modal's open state
+    const pending = getPendingProof();
+    const transcript = getLatestTranscript();
+    if (pending) {
+      showButton("🏆 Sign Pending", `${ageMin(pending.proved_at)} min`);
+    } else if (transcript) {
+      showButton("🏆 Submit Score");
+    } else {
+      hideButton();
+    }
+  }
+
   function closeModal() {
     modal?.remove();
     modal = null;
+    refreshButtonVisibility();
   }
 
   function openModal() {
-    const transcript = getLatestTranscript();
-    if (!transcript) return;
-
     modal = document.createElement("div");
     modal.id = "fs-submit-modal";
     modal.innerHTML = `
       <div class="card">
-        <h2>Submit your score on-chain</h2>
-        <div class="muted">
-          ${transcript.length} byte transcript · network: ${CONFIG.networkPassphrase.startsWith("Test") ? "testnet" : "mainnet"}
-        </div>
+        <h2 id="fs-modal-title">Submit your score on-chain</h2>
+        <div class="muted" id="fs-modal-sub"></div>
         <div class="row" id="fs-modal-wallet"></div>
         <div class="row" id="fs-modal-action"></div>
         <div class="row" id="fs-modal-status"></div>
@@ -146,6 +181,8 @@ export function mountSubmitUI(): void {
     `;
     document.body.appendChild(modal);
 
+    const titleEl = modal.querySelector<HTMLElement>("#fs-modal-title")!;
+    const subEl = modal.querySelector<HTMLElement>("#fs-modal-sub")!;
     const walletEl = modal.querySelector<HTMLDivElement>("#fs-modal-wallet")!;
     const actionEl = modal.querySelector<HTMLDivElement>("#fs-modal-action")!;
     const statusEl = modal.querySelector<HTMLDivElement>("#fs-modal-status")!;
@@ -156,71 +193,151 @@ export function mountSubmitUI(): void {
       statusEl.className = "row" + (cls ? ` ${cls}` : "");
     }
 
-    function renderAction(addr: string | null) {
-      actionEl.innerHTML = "";
-      if (!addr) return;
-      if (!CONFIG.relayUrl) {
-        actionEl.innerHTML = `<span class="err">VITE_RELAY_URL not set — submit unavailable.</span>`;
-        return;
-      }
-      const submitBtn = document.createElement("button");
-      submitBtn.textContent = "Submit to chain";
-      submitBtn.onclick = async () => {
-        submitBtn.disabled = true;
-        setStatus("Proving… this takes a few minutes. Don't close this tab.");
-        try {
-          const t = getLatestTranscript();
-          if (!t) throw new Error("transcript no longer available");
-          const result: SubmitResult = await submitScore(addr, t);
-          if (result.ok) {
-            const sc = result.score ?? "?";
-            setStatus(`✅ Submitted. score=${sc} · tx ${result.tx_hash.slice(0, 12)}…`, "ok");
-            clearLatestTranscript();
-            hideButton();
-          } else {
-            setStatus(`Submit failed: ${result.error}`, "err");
-            submitBtn.disabled = false;
-          }
-        } catch (e) {
-          setStatus(`Submit failed: ${errMsg(e)}`, "err");
-          submitBtn.disabled = false;
-        }
-      };
-      actionEl.appendChild(submitBtn);
-    }
-
-    function renderWallet(addr: string | null) {
+    function renderWalletRow(addr: string | null): void {
       walletEl.innerHTML = "";
       if (addr) {
         walletEl.innerHTML = `wallet: <code>${fmtAddress(addr)}</code>`;
-      } else {
-        const cb = document.createElement("button");
-        cb.textContent = "Connect Wallet";
-        cb.onclick = async () => {
-          cb.disabled = true;
-          setStatus("Opening wallet picker …");
-          try {
-            const a = await connect();
-            setStatus(`Connected: ${fmtAddress(a)}`, "ok");
-            renderWallet(a);
-            renderAction(a);
-          } catch (e) {
-            setStatus(`Connect failed: ${errMsg(e)}`, "err");
-            cb.disabled = false;
-          }
-        };
-        walletEl.appendChild(cb);
+        return;
+      }
+      const cb = document.createElement("button");
+      cb.textContent = "Connect Wallet";
+      cb.onclick = async () => {
+        cb.disabled = true;
+        setStatus("Opening wallet picker …");
+        try {
+          const a = await connect();
+          setStatus(`Connected: ${fmtAddress(a)}`, "ok");
+          renderWalletRow(a);
+          renderAction();
+        } catch (e) {
+          setStatus(`Connect failed: ${errMsg(e)}`, "err");
+          cb.disabled = false;
+        }
+      };
+      walletEl.appendChild(cb);
+    }
+
+    async function signAndSubmit(p: PendingProof) {
+      setStatus("Building tx and asking your wallet to sign …");
+      try {
+        const seal = Buffer.from(p.seal_hex, "hex");
+        const journal = Buffer.from(p.journal_hex, "hex");
+        const client = getClient();
+        const tx = await client.submit_score({
+          game_id: CONFIG.flightScrollGameId,
+          seal,
+          journal,
+        });
+        const { result } = await tx.signAndSend();
+        (result as { unwrap: () => void }).unwrap();
+        clearPendingProof();
+        clearLatestTranscript();
+        setStatus(`✅ Submitted. score=${p.score} ticks=${p.ticks_survived}`, "ok");
+        hideButton();
+        renderAction();
+      } catch (e) {
+        setStatus(`Sign failed: ${errMsg(e)}`, "err");
       }
     }
 
-    const current = getAddress();
-    renderWallet(current);
-    renderAction(current);
+    async function proveThenCache(transcript: Uint8Array, addr: string) {
+      setStatus("Proving on the relay (this takes a few minutes) …");
+      const r: ProveResult = await proveTranscript(addr, transcript);
+      if (!r.ok) {
+        setStatus(`Prove failed: ${r.error}`, "err");
+        return;
+      }
+      const p: PendingProof = {
+        player_strkey: addr,
+        seal_hex: r.seal_hex,
+        journal_hex: r.journal_hex,
+        score: r.score ?? 0,
+        ticks_survived: r.ticks_survived ?? 0,
+        proved_at: Date.now(),
+      };
+      setPendingProof(p);
+      clearLatestTranscript();
+      setStatus(`Proof built (score=${p.score}). Sign with your wallet to submit.`, "ok");
+      renderAction();
+    }
+
+    function renderAction(): void {
+      actionEl.innerHTML = "";
+      const addr = getAddress();
+      const pending = getPendingProof();
+      const transcript = getLatestTranscript();
+
+      if (pending) {
+        titleEl.textContent = pending.player_strkey === addr
+          ? "Sign your pending submission"
+          : "Pending proof — switch wallets to sign";
+        subEl.textContent = `score=${pending.score} · ticks=${pending.ticks_survived} · cached ${ageMin(pending.proved_at)} min ago`;
+
+        if (!addr) {
+          // connect wallet first; renderWalletRow handles that branch
+          return;
+        }
+        if (pending.player_strkey !== addr) {
+          actionEl.innerHTML = `<span class="err">connected wallet doesn't match the pending proof's player (${fmtAddress(pending.player_strkey)}). Switch wallets or discard the proof.</span>`;
+          const drop = document.createElement("button");
+          drop.textContent = "Discard pending proof";
+          drop.style.marginTop = "6px";
+          drop.onclick = () => {
+            clearPendingProof();
+            renderAction();
+            refreshButtonVisibility();
+          };
+          actionEl.appendChild(drop);
+          return;
+        }
+        const sign = document.createElement("button");
+        sign.textContent = "Sign + Submit to chain";
+        sign.onclick = () => signAndSubmit(pending);
+        actionEl.appendChild(sign);
+        const drop = document.createElement("button");
+        drop.textContent = "Discard";
+        drop.style.marginLeft = "6px";
+        drop.onclick = () => {
+          clearPendingProof();
+          renderAction();
+          refreshButtonVisibility();
+        };
+        actionEl.appendChild(drop);
+        return;
+      }
+
+      if (transcript) {
+        titleEl.textContent = "Submit your score on-chain";
+        subEl.textContent = `${transcript.length} byte transcript · ${CONFIG.networkPassphrase.startsWith("Test") ? "testnet" : "mainnet"}`;
+        if (!CONFIG.relayUrl) {
+          actionEl.innerHTML = `<span class="err">VITE_RELAY_URL not set — proving unavailable.</span>`;
+          return;
+        }
+        if (!addr) return;
+        const proveBtn = document.createElement("button");
+        proveBtn.textContent = "Prove this run";
+        proveBtn.onclick = async () => {
+          proveBtn.disabled = true;
+          try {
+            await proveThenCache(transcript, addr);
+          } finally {
+            proveBtn.disabled = false;
+          }
+        };
+        actionEl.appendChild(proveBtn);
+        return;
+      }
+
+      titleEl.textContent = "Nothing to submit";
+      subEl.textContent = "Play a run, then come back here.";
+    }
+
+    renderWalletRow(getAddress());
+    renderAction();
   }
 
-  // Show/hide the floating button based on whether a transcript is buffered.
-  onTranscriptChange((t) => {
-    if (t) showButton();
-    else hideButton();
-  });
+  // Show/hide the floating button when either source of work changes.
+  onTranscriptChange(refreshButtonVisibility);
+  onPendingProofChange(refreshButtonVisibility);
+  refreshButtonVisibility();
 }
