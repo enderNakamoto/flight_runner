@@ -130,18 +130,30 @@ pnpm --filter @flight/web build
 pnpm --filter @flight/web preview
 ```
 
-Open the URL it prints. The chain panel (top-left) shows the deployed contract id from `apps/web/.env.local`. Connect any funded testnet wallet (Freighter, xBull, Albedo, etc.) — *not* the deployer; the deployer is for admin/deploy operations, players are separate accounts.
+Nothing chain-related appears until the player wants to submit. **Play loop:**
 
-Play loop:
-1. **Connect Wallet** — picks a wallet via Stellar Wallets Kit modal
-2. **Play** — keyboard controls (↑/↓ steer, ←/→ throttle). Press **T** at any time to dump a binary transcript of the run to disk.
-3. **Prove** — locally on your machine:
-   ```bash
-   ./scripts/prove.sh transcript.bin --player <YOUR_G_STRKEY>
-   ```
-   Produces `proof_artifacts.json`.
-4. **Submit Score** — in the wallet panel, upload `proof_artifacts.json`. Wallet signs `submit_score`. Personal best updates only if your score exceeds the existing entry.
-5. **My Best** — `get_score` read shows your current PB for `flight_scroll`.
+1. **Play** — keyboard controls (↑/↓ steer, ←/→ throttle). No wallet, no panel.
+2. **Game over** — a small floating "🏆 Submit Score" button fades in at the bottom-right.
+3. **Click Submit Score** → modal opens.
+4. **Connect Wallet** inside the modal (Freighter / xBull / Albedo / etc.).
+5. **Submit to chain** → relay proves + submits → returns the tx hash.
+
+There's no leaderboard view in the UI itself — the contract is the leaderboard. Query it with `stellar contract invoke … get_score …` or any Soroban explorer.
+
+### Running the relay
+
+The Submit button POSTs to a relay (see `services/server/`). Locally:
+
+```bash
+cargo build --release --bin flight-host          # once, builds the prover
+cd services/server
+cp .env.example .env                             # then fill in RELAY_SECRET_KEY etc.
+bun run dev                                      # listens on :8787
+```
+
+Set `VITE_RELAY_URL=http://localhost:8787` in `apps/web/.env.local` and rebuild the web app.
+
+The relay is a single fire-and-forget endpoint — it spawns `flight-host` per request, waits for the proof, calls `submit_score` on-chain with its own funded keypair, and returns the tx hash. No DB, no queue.
 
 ---
 
