@@ -252,6 +252,40 @@ export function mountSubmitUI(): void {
           renderAction();
           return;
         }
+        // Wallet account isn't funded / doesn't exist on the network.
+        if (
+          /account not found/i.test(m) ||
+          /could not load account/i.test(m) ||
+          /resource[_\s]?not[_\s]?found/i.test(m) ||
+          /404/i.test(m)
+        ) {
+          setStatus(
+            `Your wallet has no XLM on this network. Fund it via friendbot (testnet) or by buying XLM (mainnet), then retry.`,
+            "err",
+          );
+          return;
+        }
+        // Account exists but balance too low for fees.
+        if (
+          /insufficient[_\s]?balance/i.test(m) ||
+          /insufficient[_\s]?fee/i.test(m) ||
+          /tx_insufficient/i.test(m)
+        ) {
+          setStatus(
+            `Wallet balance too low to pay tx fees. Top up your XLM and retry.`,
+            "err",
+          );
+          return;
+        }
+        // Player declined / closed the wallet popup.
+        if (
+          /user (?:declined|rejected|denied|cancel)/i.test(m) ||
+          /user reject/i.test(m) ||
+          /denied transaction signature/i.test(m)
+        ) {
+          setStatus("Wallet signature cancelled. Click Sign again when ready.", "err");
+          return;
+        }
         setStatus(`Sign failed: ${m}`, "err");
       }
     }
