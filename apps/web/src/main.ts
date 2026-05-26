@@ -17,7 +17,6 @@ import { mountAllLeaderboards, mountGameLeaderboard } from "./landing/leaderboar
 import { BootScene } from "./scenes/BootScene.js";
 import { PlayScene } from "./scenes/PlayScene.js";
 import { mountBackLink } from "./ui/back-link.js";
-import { mountSigninTip } from "./ui/signin-tip.js";
 import { mountSubmitUI } from "./ui/submit-ui.js";
 
 // Subscribe globally: whenever a wallet connects (silent restore on
@@ -36,7 +35,6 @@ const segments = window.location.pathname.split("/").filter(Boolean);
 
 function bootGame() {
   mountBackLink();
-  mountSigninTip();
   mountSubmitUI();
   new Phaser.Game({
     type: Phaser.AUTO,

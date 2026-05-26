@@ -14,7 +14,6 @@ export const INTRO_BODY: readonly string[] = [
   "HAZARDS   Birds. Drones. Jets. UFOs.",
   "REWARD    Top-10 leaderboard scores earn",
   "          Sentinel Protocol points.",
-  "          Sign in + submit on-chain to count.",
 ];
 
 export const INTRO_HINT = "PRESS ANY KEY TO BOARD";

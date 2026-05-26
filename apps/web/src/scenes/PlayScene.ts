@@ -61,6 +61,7 @@ import {
   type GameState,
 } from "@flight/sim";
 import { backgroundFor } from "../backgrounds.js";
+import { connect, getAddress, onWalletChange } from "../chain/wallet.js";
 import { clearLatestRun, setLatestRun } from "../chain/transcript-buffer.js";
 import { INTERMISSION_DURATION_MS, INTERMISSIONS } from "../intermissions.js";
 import { INTRO_BODY, INTRO_HEADER, INTRO_HINT, INTRO_TITLE_TEMPLATE } from "../intro.js";
@@ -217,6 +218,14 @@ export class PlayScene extends Phaser.Scene {
   private spDivider!: Phaser.GameObjects.Rectangle;
   private spTagline!: Phaser.GameObjects.Text;
   private spSubTagline!: Phaser.GameObjects.Text;
+
+  // Inline auth row shown inside the intro body — clickable [SIGN IN]
+  // button when disconnected, "✓ <addr>" status line when connected.
+  // Replaces the bottom-of-page DOM signin tip; lives in the same
+  // Phaser layer as the rest of the briefing so it reads as part of
+  // the page, not a banner pasted on top.
+  private interAuthRow!: Phaser.GameObjects.Text;
+  private walletUnsubscribe?: () => void;
 
   constructor() { super("PlayScene"); }
 
@@ -498,6 +507,39 @@ export class PlayScene extends Phaser.Scene {
     // both the submit-on-PB and Sentinel-on-non-PB cases. One CTA per
     // game-over screen, end of story.)
 
+    // Inline auth row inside the intro body. Two states:
+    //   not signed in → "[ SIGN IN — click to start counting your scores ]"
+    //                    clickable, accent-yellow, opens the wallet picker
+    //   signed in     → "✓ G… — submit on-chain after the run to count"
+    //                    informational, soft green, non-interactive
+    this.interAuthRow = this.add
+      .text(WORLD_WIDTH / 2, 480, "", {
+        fontFamily: "ui-monospace, Menlo, monospace",
+        fontSize: "18px",
+        color: "#ffd54f",
+        stroke: "#000000",
+        strokeThickness: 4,
+        align: "center",
+      })
+      .setOrigin(0.5, 0.5)
+      .setDepth(18)
+      .setVisible(false);
+    this.interAuthRow.setInteractive({ useHandCursor: true });
+    this.interAuthRow.on("pointerdown", () => {
+      if (!getAddress()) {
+        connect().catch(() => { /* user cancelled — fine */ });
+      }
+    });
+    // Subscribe to wallet state changes so the row updates live the moment
+    // the kit modal closes. Unsubscribe on scene shutdown / restart so we
+    // don't accumulate stale listeners.
+    this.walletUnsubscribe?.();
+    this.walletUnsubscribe = onWalletChange((addr) => this.updateAuthRow(addr));
+    this.events.once("shutdown", () => {
+      this.walletUnsubscribe?.();
+      this.walletUnsubscribe = undefined;
+    });
+
     // Universal SKIP button — bottom-right corner of the overlay
     this.skipBtnBg = this.add
       .rectangle(WORLD_WIDTH - 70, WORLD_HEIGHT - 30, 110, 30, 0x000000, 0.55)
@@ -707,6 +749,26 @@ export class PlayScene extends Phaser.Scene {
     this.skipBtnBg.setVisible(true);
     this.skipBtnText.setVisible(true);
     this.startTyping(INTRO_BODY.join("\n"));
+    // Inline auth row appears below the typed body, snapping to whichever
+    // sign-in state the player is in right now.
+    this.interAuthRow.setVisible(true);
+    this.updateAuthRow(getAddress());
+  }
+
+  /// Refresh the inline auth row's text + color based on wallet state.
+  /// Always called from showIntro (initial render) and from the
+  /// onWalletChange subscription (live updates while the intro is up).
+  private updateAuthRow(addr: string | null): void {
+    if (addr) {
+      const short = addr.length > 14 ? `${addr.slice(0, 8)}…${addr.slice(-4)}` : addr;
+      this.interAuthRow
+        .setText(`✓ signed in: ${short}  ·  submit on-chain to count`)
+        .setColor("#7aff8e");
+    } else {
+      this.interAuthRow
+        .setText("▶  CLICK TO SIGN IN  ·  scores only count once on-chain")
+        .setColor("#ffd54f");
+    }
   }
 
   private exitIntro(): void {
@@ -716,6 +778,7 @@ export class PlayScene extends Phaser.Scene {
     this.interTitle.setVisible(false);
     this.interBody.setVisible(false);
     this.interHint.setVisible(false);
+    this.interAuthRow.setVisible(false);
     this.skipBtnBg.setVisible(false);
     this.skipBtnText.setVisible(false);
     this.bodyTypingDone = true;
