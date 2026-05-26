@@ -805,7 +805,10 @@ export class PlayScene extends Phaser.Scene {
       .setText(isBest ? `NEW BEST  ${this.state.score}` : `SCORE ${this.state.score}    BEST ${this.best}`)
       .setColor(isBest ? "#ffd54f" : "#9be7ff")
       .setVisible(true);
-    this.interHint.setY(WORLD_HEIGHT - 20).setText("R restart   T download transcript").setVisible(true);
+    // T (download .bin transcript) is still bound as a dev shortcut but
+    // intentionally not advertised — the relay handles proving end-to-end
+    // now, players don't need to capture raw bin files.
+    this.interHint.setY(WORLD_HEIGHT - 20).setText("R restart").setVisible(true);
 
     // Sentinel Protocol branded outro — header, big tagline, sub-tagline.
     // The single floating DOM button (apps/web/src/ui/submit-ui.ts) is the

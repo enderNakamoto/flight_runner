@@ -61,7 +61,10 @@ const STYLE = `
   #fs-submit-btn {
     position: fixed;
     left: 50%;
-    bottom: 28px;
+    /* Sits above the in-canvas "R restart" hint (y ≈ window bottom −20)
+       and below the Sentinel sub-tagline (canvas y ≈ 480). 110px clears
+       the hint at typical 720p viewports without overlapping the body. */
+    bottom: 110px;
     transform: translateX(-50%);
     z-index: 90;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
