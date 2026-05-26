@@ -580,7 +580,6 @@ export function mountLanding(): void {
     banner.innerHTML = `
       <strong>Sign in</strong> to see your best scores on-chain.
       <button id="fs-banner-signin">Sign in now</button>
-      <span style="color: var(--muted); margin-left: 8px;">or skip — you can sign in later to submit a score.</span>
     `;
     banner.querySelector<HTMLButtonElement>("#fs-banner-signin")!.onclick = doSignIn;
   }
