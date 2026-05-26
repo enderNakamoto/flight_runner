@@ -14,14 +14,14 @@ function optional(name: string, fallback: string): string {
 
 export const CONFIG = {
   port: Number(optional("PORT", "8787")),
-  dbPath: optional("DB_PATH", "./.data/relay.db"),
-  workerApiKey: required("WORKER_API_KEY"),
   network: optional("NETWORK", "testnet") as "testnet" | "mainnet",
   rpcUrl: required("STELLAR_RPC_URL"),
   networkPassphrase: required("STELLAR_NETWORK_PASSPHRASE"),
   gameHubContractId: required("GAME_HUB_CONTRACT_ID"),
   relaySecretKey: required("RELAY_SECRET_KEY"),
   gameId: Number(optional("GAME_ID", "1")),
+  flightHostBin: optional("FLIGHT_HOST_BIN", "../../target/release/flight-host"),
+  submitCooldownSeconds: Number(optional("SUBMIT_COOLDOWN_SECONDS", "60")),
 };
 
 export function maskSecret(s: string): string {
