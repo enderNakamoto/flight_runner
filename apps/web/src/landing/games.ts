@@ -37,6 +37,15 @@ export const GAMES: GameEntry[] = [
       text: "Earn points for Sentinel Protocol",
     },
   },
+  {
+    slug: "neon_streets",
+    title: "NEON STREETS",
+    blurb: "Pixel-art brawler. Trade blows on neon streets.",
+    description:
+      "Two fighters. One Tokyo back alley. Pick your character, learn the combos, climb the on-chain rank.",
+    thumb: "/assets/games/neon_streets.png",
+    status: "soon",
+  },
 ];
 
 export function findGame(slug: string): GameEntry | null {

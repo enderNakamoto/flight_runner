@@ -179,8 +179,9 @@ const STYLE = `
   }
   #fs-landing .card .thumb img {
     image-rendering: pixelated;
-    max-width: 60%;
+    max-width: 100%;
     max-height: 100%;
+    object-fit: contain;
   }
 
   #fs-landing .card .perk {
@@ -257,9 +258,15 @@ const STYLE = `
   #fs-landing .card .leaderboard:hover {
     border-color: var(--accent);
   }
-  #fs-landing .card.soon .play {
+  #fs-landing .card.soon .play,
+  #fs-landing .card.soon .leaderboard {
     background: #2a2f3f;
     border-color: #3a4456;
+    color: #7a86a4;
+    pointer-events: none;
+  }
+  #fs-landing .card.soon .thumb img {
+    filter: grayscale(0.6);
   }
 
   #fs-landing .footer {
@@ -322,8 +329,9 @@ function makeCard(g: GameEntry): HTMLElement {
       }</div>`
     : "";
 
-  const playHref = g.status === "live" ? `/${g.slug}` : "#";
-  const lbHref = `/${g.slug}/leaderboard`;
+  const isLive = g.status === "live";
+  const playHref = isLive ? `/${g.slug}` : "#";
+  const lbHref = isLive ? `/${g.slug}/leaderboard` : "#";
 
   card.innerHTML = `
     ${perkHtml}
@@ -334,10 +342,10 @@ function makeCard(g: GameEntry): HTMLElement {
     <div class="blurb">${g.blurb}</div>
     <div class="desc">${g.description}</div>
     <div class="actions">
-      <a href="${playHref}" class="play"${g.status !== "live" ? ' onclick="event.preventDefault()"' : ""}>
-        ${g.status === "live" ? "▶ PLAY" : "COMING SOON"}
+      <a href="${playHref}" class="play"${isLive ? "" : ' onclick="event.preventDefault()"'}>
+        ${isLive ? "▶ PLAY" : "COMING SOON"}
       </a>
-      <a href="${lbHref}" class="leaderboard">📊 LEADERBOARD</a>
+      <a href="${lbHref}" class="leaderboard"${isLive ? "" : ' onclick="event.preventDefault()"'}>📊 LEADERBOARD</a>
     </div>
   `;
   return card;
