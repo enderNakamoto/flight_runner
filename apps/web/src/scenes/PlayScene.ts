@@ -64,7 +64,7 @@ import { backgroundFor } from "../backgrounds.js";
 import { clearLatestRun, setLatestRun } from "../chain/transcript-buffer.js";
 import { INTERMISSION_DURATION_MS, INTERMISSIONS } from "../intermissions.js";
 import { INTRO_BODY, INTRO_HEADER, INTRO_HINT, INTRO_TITLE_TEMPLATE } from "../intro.js";
-import { OUTROS, REASON_TAG, SENTINEL_PROTOCOL_URL } from "../outros.js";
+import { OUTROS } from "../outros.js";
 
 interface PillarSprites {
   top: Phaser.GameObjects.Image;
@@ -217,9 +217,6 @@ export class PlayScene extends Phaser.Scene {
   private spDivider!: Phaser.GameObjects.Rectangle;
   private spTagline!: Phaser.GameObjects.Text;
   private spSubTagline!: Phaser.GameObjects.Text;
-  private spCtaBg!: Phaser.GameObjects.Rectangle;
-  private spCtaText!: Phaser.GameObjects.Text;
-  private spCtaPulse?: Phaser.Tweens.Tween;
 
   constructor() { super("PlayScene"); }
 
@@ -467,10 +464,9 @@ export class PlayScene extends Phaser.Scene {
       .setDepth(17)
       .setVisible(false);
 
-    // Main tagline — the headline pitch. Bumped large so it reads as the
-    // hero element of the outro screen.
+    // Main tagline — deadpan corporate-disaster vibe.
     this.spTagline = this.add
-      .text(WORLD_WIDTH / 2, 430, "THIS DELAY WOULD HAVE BEEN COVERED.", {
+      .text(WORLD_WIDTH / 2, 430, "DELAY WOULD HAVE BEEN COVERED", {
         fontFamily: "ui-monospace, Menlo, monospace",
         fontSize: "32px",
         color: "#ffd54f",
@@ -483,11 +479,11 @@ export class PlayScene extends Phaser.Scene {
       .setDepth(18)
       .setVisible(false);
 
-    // Sub-tagline — spells out what Sentinel covers.
+    // Sub-tagline — the joke landing.
     this.spSubTagline = this.add
-      .text(WORLD_WIDTH / 2, 480, "Delays. Diversions. Cancellations. Paid out in minutes.", {
+      .text(WORLD_WIDTH / 2, 480, "if you'd hedged your bets with Sentinel.  maybe next time.", {
         fontFamily: "ui-monospace, Menlo, monospace",
-        fontSize: "20px",
+        fontSize: "18px",
         color: "#e0e0e0",
         stroke: "#000000",
         strokeThickness: 4,
@@ -497,30 +493,10 @@ export class PlayScene extends Phaser.Scene {
       .setDepth(18)
       .setVisible(false);
 
-    // CTA button — large, bright, clickable. Opens sentinelprotocol.xyz with
-    // the run's data attached as query params.
-    this.spCtaBg = this.add
-      .rectangle(WORLD_WIDTH / 2, 560, 620, 80, 0x1976d2, 1)
-      .setDepth(17)
-      .setStrokeStyle(3, 0x80c8ff, 1)
-      .setVisible(false);
-    this.spCtaText = this.add
-      .text(WORLD_WIDTH / 2, 560, "COVER YOUR NEXT FLIGHT  →", {
-        fontFamily: "ui-monospace, Menlo, monospace",
-        fontSize: "32px",
-        color: "#ffffff",
-        stroke: "#000000",
-        strokeThickness: 5,
-        fontStyle: "bold",
-      })
-      .setOrigin(0.5, 0.5)
-      .setDepth(18)
-      .setVisible(false);
-    this.spCtaBg
-      .setInteractive({ useHandCursor: true })
-      .on("pointerover", () => this.spCtaBg.setFillStyle(0x2196f3, 1))
-      .on("pointerout", () => this.spCtaBg.setFillStyle(0x1565c0, 1))
-      .on("pointerdown", () => this.openSentinelProtocol());
+    // (Old Phaser-canvas "COVER YOUR NEXT FLIGHT" CTA removed — there's
+    // now a single DOM floating button at the bottom-center that handles
+    // both the submit-on-PB and Sentinel-on-non-PB cases. One CTA per
+    // game-over screen, end of story.)
 
     // Universal SKIP button — bottom-right corner of the overlay
     this.skipBtnBg = this.add
@@ -728,8 +704,6 @@ export class PlayScene extends Phaser.Scene {
     this.interCountdown.setVisible(false);
     this.spTagline.setVisible(false);
     this.spSubTagline.setVisible(false);
-    this.spCtaBg.setVisible(false);
-    this.spCtaText.setVisible(false);
     this.skipBtnBg.setVisible(true);
     this.skipBtnText.setVisible(true);
     this.startTyping(INTRO_BODY.join("\n"));
@@ -770,29 +744,19 @@ export class PlayScene extends Phaser.Scene {
       .setVisible(true);
     this.interHint.setY(WORLD_HEIGHT - 20).setText("R restart   T download transcript").setVisible(true);
 
-    // Sentinel Protocol branded outro — header, big tagline, sub-tagline, CTA.
+    // Sentinel Protocol branded outro — header, big tagline, sub-tagline.
+    // The single floating DOM button (apps/web/src/ui/submit-ui.ts) is the
+    // CTA — handles both submit-on-PB and Sentinel-on-non-PB; no Phaser-
+    // canvas CTA fights for the player's eye.
     this.spHeader.setText("SENTINEL PROTOCOL  //  DELAY NOTIFICATION").setVisible(true);
     this.spDivider.setVisible(true);
     this.spTagline.setVisible(true);
     this.spSubTagline.setVisible(true);
-    this.spCtaBg.setVisible(true);
-    this.spCtaText.setVisible(true);
 
     // SKIP button — in outro it functions as "restart now"
     this.skipBtnBg.setVisible(true);
     this.skipBtnText.setVisible(true);
     this.startTyping(copy.body.join("\n"));
-
-    // Subtle breathing pulse on the CTA so it reads as the action to take.
-    this.spCtaPulse?.stop();
-    this.spCtaPulse = this.tweens.add({
-      targets: [this.spCtaBg, this.spCtaText],
-      scale: { from: 1, to: 1.045 },
-      duration: 900,
-      yoyo: true,
-      repeat: -1,
-      ease: "Sine.easeInOut",
-    });
   }
 
   private hideOutro(): void {
@@ -806,34 +770,9 @@ export class PlayScene extends Phaser.Scene {
     this.spDivider.setVisible(false);
     this.spTagline.setVisible(false);
     this.spSubTagline.setVisible(false);
-    this.spCtaBg.setVisible(false);
-    this.spCtaText.setVisible(false);
     this.skipBtnBg.setVisible(false);
     this.skipBtnText.setVisible(false);
     this.bodyTypingDone = true;
-    if (this.spCtaPulse) {
-      this.spCtaPulse.stop();
-      this.spCtaBg.setScale(1);
-      this.spCtaText.setScale(1);
-      this.spCtaPulse = undefined;
-    }
-  }
-
-  private openSentinelProtocol(): void {
-    const flightId = "FS-" + Math.abs(this.seed % 100000).toString().padStart(5, "0");
-    const stageName = STAGE_NAMES[this.state.stage as Stage]!.toLowerCase();
-    const reasonTag = REASON_TAG[this.state.gameOverReason] ?? "unknown";
-    const params = new URLSearchParams({
-      flight: flightId,
-      stage: stageName,
-      reason: reasonTag,
-      score: String(this.state.score),
-    });
-    try {
-      window.open(`${SENTINEL_PROTOCOL_URL}?${params.toString()}`, "_blank", "noopener,noreferrer");
-    } catch {
-      // ignore — popup blocker or unavailable window
-    }
   }
 
   private readButtons(): number {
