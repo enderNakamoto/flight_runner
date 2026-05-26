@@ -762,11 +762,11 @@ export class PlayScene extends Phaser.Scene {
     if (addr) {
       const short = addr.length > 14 ? `${addr.slice(0, 8)}…${addr.slice(-4)}` : addr;
       this.interAuthRow
-        .setText(`✓ signed in: ${short}  ·  submit on-chain to count`)
+        .setText(`✓ signed in: ${short}  ·  remember to submit your best after the run`)
         .setColor("#7aff8e");
     } else {
       this.interAuthRow
-        .setText("▶  CLICK TO SIGN IN  ·  scores only count once on-chain")
+        .setText("▶  CLICK TO SIGN IN  ·  unsubmitted scores don't count")
         .setColor("#ffd54f");
     }
   }
