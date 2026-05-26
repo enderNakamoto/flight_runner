@@ -4,11 +4,15 @@
 import { CONFIG, maskSecret } from "./config.ts";
 import { getDb } from "./db.ts";
 import { createRun, getRun } from "./routes/public.ts";
+import { getInput, pollJob, postError, postResult } from "./routes/worker.ts";
 
 // Force DB init (and config validation) at boot — fail fast.
 getDb();
 
 const RUN_GET = /^\/api\/runs\/(\d+)$/;
+const WORKER_INPUT = /^\/api\/worker\/input\/(\d+)$/;
+const WORKER_RESULT = /^\/api\/worker\/result\/(\d+)$/;
+const WORKER_ERROR = /^\/api\/worker\/error\/(\d+)$/;
 
 const server = Bun.serve({
   port: CONFIG.port,
@@ -64,10 +68,14 @@ async function route(req: Request, path: string, method: string): Promise<Respon
     return getRun(m[1]!);
   }
 
-  // Worker API (slice 3) lands in next commit.
-  if (path.startsWith("/api/worker/")) {
-    return new Response("not implemented yet", { status: 501 });
-  }
+  // Worker API
+  if (path === "/api/worker/poll" && method === "GET") return pollJob(req);
+  const wi = path.match(WORKER_INPUT);
+  if (wi && method === "GET") return getInput(req, wi[1]!);
+  const wr = path.match(WORKER_RESULT);
+  if (wr && method === "POST") return postResult(req, wr[1]!);
+  const we = path.match(WORKER_ERROR);
+  if (we && method === "POST") return postError(req, we[1]!);
 
   return new Response("not found", { status: 404 });
 }
