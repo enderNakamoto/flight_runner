@@ -306,3 +306,263 @@ fn cancel_run_frees_active_slot_for_same_game() {
     let run2 = client.start_run(&1, &p);
     assert!(run2 > run1);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Player flow — sad-path matrix (slice 4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn start_run_rejects_uninitialized() {
+    let (env, _admin, _verifier, client) = make_env();
+    let p = Address::generate(&env);
+    let err = client.try_start_run(&1, &p).unwrap_err().unwrap();
+    assert_eq!(err, Error::NotInitialized);
+}
+
+#[test]
+fn start_run_rejects_unknown_game() {
+    let (env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    let p = Address::generate(&env);
+    let err = client.try_start_run(&99, &p).unwrap_err().unwrap();
+    assert_eq!(err, Error::GameNotFound);
+}
+
+#[test]
+fn start_run_rejects_paused_game() {
+    let (env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    client.add_game(&1, &dummy_image_id(&env, 0xAA), &String::from_str(&env, "flight"));
+    client.set_paused(&1, &true);
+    let p = Address::generate(&env);
+    let err = client.try_start_run(&1, &p).unwrap_err().unwrap();
+    assert_eq!(err, Error::GamePaused);
+}
+
+#[test]
+fn start_run_rejects_duplicate_active_run_for_same_game() {
+    let (env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    client.add_game(&1, &dummy_image_id(&env, 0xAA), &String::from_str(&env, "flight"));
+    let p = Address::generate(&env);
+    client.start_run(&1, &p);
+    let err = client.try_start_run(&1, &p).unwrap_err().unwrap();
+    assert_eq!(err, Error::RunAlreadyActive);
+}
+
+#[test]
+fn start_run_allows_concurrent_runs_across_different_games() {
+    let (env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    client.add_game(&1, &dummy_image_id(&env, 0xAA), &String::from_str(&env, "flight"));
+    client.add_game(&2, &dummy_image_id(&env, 0xBB), &String::from_str(&env, "other"));
+    let p = Address::generate(&env);
+    let run_a = client.start_run(&1, &p);
+    let run_b = client.start_run(&2, &p);
+    assert_ne!(run_a, run_b);
+    // Both reads succeed; both runs are in flight.
+    assert!(!client.get_run(&run_a).unwrap().settled);
+    assert!(!client.get_run(&run_b).unwrap().settled);
+}
+
+#[test]
+fn cancel_run_rejects_unknown_run() {
+    let (_env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    let err = client.try_cancel_run(&9999).unwrap_err().unwrap();
+    assert_eq!(err, Error::RunNotFound);
+}
+
+#[test]
+fn cancel_run_rejects_already_settled_run() {
+    let (env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    client.add_game(&1, &dummy_image_id(&env, 0xAA), &String::from_str(&env, "flight"));
+    let p = Address::generate(&env);
+    let run_id = client.start_run(&1, &p);
+    let seed = client.get_run(&run_id).unwrap().seed;
+    client.settle_run(&run_id, &seal_stub(&env), &journal(&env, 1, 1, seed, 0));
+    let err = client.try_cancel_run(&run_id).unwrap_err().unwrap();
+    assert_eq!(err, Error::RunAlreadySettled);
+}
+
+#[test]
+fn settle_run_rejects_unknown_run() {
+    let (env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    client.add_game(&1, &dummy_image_id(&env, 0xAA), &String::from_str(&env, "flight"));
+    let err = client
+        .try_settle_run(&9999, &seal_stub(&env), &journal(&env, 0, 0, 0, 0))
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, Error::RunNotFound);
+}
+
+#[test]
+fn settle_run_rejects_double_settle() {
+    let (env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    client.add_game(&1, &dummy_image_id(&env, 0xAA), &String::from_str(&env, "flight"));
+    let p = Address::generate(&env);
+    let run_id = client.start_run(&1, &p);
+    let seed = client.get_run(&run_id).unwrap().seed;
+    let j = journal(&env, 100, 100, seed, 0);
+    client.settle_run(&run_id, &seal_stub(&env), &j);
+    let err = client
+        .try_settle_run(&run_id, &seal_stub(&env), &j)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, Error::RunAlreadySettled);
+}
+
+#[test]
+fn settle_run_rejects_bad_seal_size() {
+    let (env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    client.add_game(&1, &dummy_image_id(&env, 0xAA), &String::from_str(&env, "flight"));
+    let p = Address::generate(&env);
+    let run_id = client.start_run(&1, &p);
+    let seed = client.get_run(&run_id).unwrap().seed;
+    let bad_seal = Bytes::from_slice(&env, &[0u8; 100]); // wrong length
+    let err = client
+        .try_settle_run(&run_id, &bad_seal, &journal(&env, 0, 0, seed, 0))
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, Error::InvalidSeal);
+}
+
+#[test]
+fn settle_run_rejects_bad_journal_size() {
+    let (env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    client.add_game(&1, &dummy_image_id(&env, 0xAA), &String::from_str(&env, "flight"));
+    let p = Address::generate(&env);
+    let run_id = client.start_run(&1, &p);
+    let bad_journal = Bytes::from_slice(&env, &[0u8; 32]); // wrong length
+    let err = client
+        .try_settle_run(&run_id, &seal_stub(&env), &bad_journal)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, Error::InvalidJournal);
+}
+
+#[test]
+fn settle_run_rejects_paused_game() {
+    let (env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    client.add_game(&1, &dummy_image_id(&env, 0xAA), &String::from_str(&env, "flight"));
+    let p = Address::generate(&env);
+    let run_id = client.start_run(&1, &p);
+    let seed = client.get_run(&run_id).unwrap().seed;
+    // Admin pauses the game AFTER the run started.
+    client.set_paused(&1, &true);
+    let err = client
+        .try_settle_run(&run_id, &seal_stub(&env), &journal(&env, 0, 0, seed, 0))
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, Error::GamePaused);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Leaderboard semantics (slice 4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn settle_run_tie_break_by_ticks_replaces_pb() {
+    // Same score, more ticks → replaces (player survived longer for the
+    // same point count).
+    let (env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    client.add_game(&1, &dummy_image_id(&env, 0xAA), &String::from_str(&env, "flight"));
+    let p = Address::generate(&env);
+
+    let run1 = client.start_run(&1, &p);
+    let seed1 = client.get_run(&run1).unwrap().seed;
+    client.settle_run(&run1, &seal_stub(&env), &journal(&env, 500, 1000, seed1, 0));
+
+    let run2 = client.start_run(&1, &p);
+    let seed2 = client.get_run(&run2).unwrap().seed;
+    client.settle_run(&run2, &seal_stub(&env), &journal(&env, 500, 1500, seed2, 0));
+
+    let hs = client.get_score(&1, &p).unwrap();
+    assert_eq!(hs.score, 500);
+    assert_eq!(hs.ticks_survived, 1500);
+    assert_eq!(hs.run_id, run2);
+}
+
+#[test]
+fn settle_run_equal_score_lower_ticks_keeps_pb() {
+    let (env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    client.add_game(&1, &dummy_image_id(&env, 0xAA), &String::from_str(&env, "flight"));
+    let p = Address::generate(&env);
+
+    let run1 = client.start_run(&1, &p);
+    let seed1 = client.get_run(&run1).unwrap().seed;
+    client.settle_run(&run1, &seal_stub(&env), &journal(&env, 500, 1500, seed1, 0));
+
+    let run2 = client.start_run(&1, &p);
+    let seed2 = client.get_run(&run2).unwrap().seed;
+    client.settle_run(&run2, &seal_stub(&env), &journal(&env, 500, 1000, seed2, 0));
+
+    let hs = client.get_score(&1, &p).unwrap();
+    assert_eq!(hs.ticks_survived, 1500);
+    assert_eq!(hs.run_id, run1);
+}
+
+#[test]
+fn high_scores_are_isolated_per_player() {
+    let (env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    client.add_game(&1, &dummy_image_id(&env, 0xAA), &String::from_str(&env, "flight"));
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+
+    let r_a = client.start_run(&1, &alice);
+    let s_a = client.get_run(&r_a).unwrap().seed;
+    client.settle_run(&r_a, &seal_stub(&env), &journal(&env, 100, 100, s_a, 0));
+
+    let r_b = client.start_run(&1, &bob);
+    let s_b = client.get_run(&r_b).unwrap().seed;
+    client.settle_run(&r_b, &seal_stub(&env), &journal(&env, 999, 999, s_b, 0));
+
+    assert_eq!(client.get_score(&1, &alice).unwrap().score, 100);
+    assert_eq!(client.get_score(&1, &bob).unwrap().score, 999);
+}
+
+#[test]
+fn high_scores_are_isolated_per_game() {
+    let (env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    client.add_game(&1, &dummy_image_id(&env, 0xAA), &String::from_str(&env, "flight"));
+    client.add_game(&2, &dummy_image_id(&env, 0xBB), &String::from_str(&env, "other"));
+    let p = Address::generate(&env);
+
+    let r1 = client.start_run(&1, &p);
+    let s1 = client.get_run(&r1).unwrap().seed;
+    client.settle_run(&r1, &seal_stub(&env), &journal(&env, 100, 100, s1, 0));
+
+    let r2 = client.start_run(&2, &p);
+    let s2 = client.get_run(&r2).unwrap().seed;
+    client.settle_run(&r2, &seal_stub(&env), &journal(&env, 500, 500, s2, 0));
+
+    assert_eq!(client.get_score(&1, &p).unwrap().score, 100);
+    assert_eq!(client.get_score(&2, &p).unwrap().score, 500);
+    assert_eq!(client.get_score(&99, &p), None); // unknown game → no score
+}
+
+#[test]
+fn get_score_returns_none_when_player_has_not_submitted() {
+    let (env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    client.add_game(&1, &dummy_image_id(&env, 0xAA), &String::from_str(&env, "flight"));
+    let p = Address::generate(&env);
+    assert_eq!(client.get_score(&1, &p), None);
+}
+
+#[test]
+fn get_run_returns_none_for_unknown_run() {
+    let (_env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    assert!(client.get_run(&12345).is_none());
+}
