@@ -9,16 +9,25 @@
 
 import Phaser from "phaser";
 import { WORLD_HEIGHT, WORLD_WIDTH } from "@flight/sim";
+import { restoreWallet } from "./chain/wallet.js";
 import { findGame } from "./landing/games.js";
 import { mountLanding } from "./landing/landing.js";
 import { mountAllLeaderboards, mountGameLeaderboard } from "./landing/leaderboard.js";
 import { BootScene } from "./scenes/BootScene.js";
 import { PlayScene } from "./scenes/PlayScene.js";
+import { mountSigninTip } from "./ui/signin-tip.js";
 import { mountSubmitUI } from "./ui/submit-ui.js";
+
+// Silent reconnect of a previously-chosen wallet — doesn't open the
+// picker, just re-attaches if the user already authorized the site.
+// Runs in parallel with page mount; the UI subscribes to wallet
+// changes and updates if/when the address comes back.
+restoreWallet();
 
 const segments = window.location.pathname.split("/").filter(Boolean);
 
 function bootGame() {
+  mountSigninTip();
   mountSubmitUI();
   new Phaser.Game({
     type: Phaser.AUTO,

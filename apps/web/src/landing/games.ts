@@ -17,6 +17,9 @@ export interface GameEntry {
   description: string;     // longer paragraph
   thumb: string;           // path under /assets/
   status: "live" | "soon";
+  /** game_id registered on the game_hub contract. Only meaningful for
+   *  live games (used to fetch the player's on-chain best). */
+  gameId?: number;
   /** Per-game perks — e.g. earning points in a partner ecosystem.
    *  Only renders when set; other games can leave this undefined. */
   perk?: PartnerPerk;
@@ -33,6 +36,7 @@ export const GAMES: GameEntry[] = [
       "Steer your propeller plane through five escalating stages of pillars, birds, drones, jets, and UFOs. Refuel mid-flight or fall out of the sky. Submit your best run on-chain — every score is a proven replay.",
     thumb: "/assets/plane.png",
     status: "live",
+    gameId: 1,
     perk: {
       text: "Earn points for Sentinel Protocol",
     },

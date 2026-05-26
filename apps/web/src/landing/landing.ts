@@ -1,7 +1,29 @@
 // Landing page — pixel-art card grid of available games. Mounts into
 // document.body via main.ts when the URL is not a game slug.
 
+import { Buffer } from "buffer";
+import { StrKey } from "@stellar/stellar-sdk";
+import { Client, type HighScoreEntry } from "@flight/game-hub-client";
+import { CONFIG, requireContractId } from "../chain/config.js";
+import { connect, disconnect, getAddress, onWalletChange } from "../chain/wallet.js";
 import { GAMES, type GameEntry } from "./games.js";
+
+function strkeyToPubkey(strkey: string): Buffer {
+  return Buffer.from(StrKey.decodeEd25519PublicKey(strkey));
+}
+
+function fmtAddress(a: string): string {
+  return a.length <= 14 ? a : `${a.slice(0, 6)}…${a.slice(-4)}`;
+}
+
+function getReadClient(): Client {
+  return new Client({
+    contractId: requireContractId(),
+    networkPassphrase: CONFIG.networkPassphrase,
+    rpcUrl: CONFIG.rpcUrl,
+    publicKey: undefined,
+  });
+}
 
 const STYLE = `
   @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
@@ -72,21 +94,72 @@ const STYLE = `
     display: flex;
     justify-content: flex-end;
     align-items: center;
-    gap: 18px;
+    gap: 14px;
   }
-  #fs-landing .topnav a {
+  #fs-landing .topnav a,
+  #fs-landing .topnav button {
+    background: transparent;
     color: var(--muted);
     text-decoration: none;
+    font-family: var(--font-body);
     font-size: 13px;
     font-weight: 500;
     padding: 6px 10px;
     border: 1px solid transparent;
+    cursor: pointer;
     transition: color 0.1s, border-color 0.1s;
   }
-  #fs-landing .topnav a:hover {
+  #fs-landing .topnav a:hover,
+  #fs-landing .topnav button:hover {
     color: var(--accent);
     border-color: var(--border);
   }
+  #fs-landing .topnav .signin {
+    color: #fff;
+    border-color: var(--border-bright);
+  }
+  #fs-landing .topnav .signin:hover {
+    background: #1c2a4c;
+  }
+  #fs-landing .topnav .signed {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #d0d8ee;
+  }
+  #fs-landing .topnav .signed code {
+    background: rgba(255,255,255,0.06);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  #fs-landing .topnav .signed button {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  #fs-landing .signin-banner {
+    background: rgba(245, 208, 75, 0.08);
+    border: 1px dashed rgba(245, 208, 75, 0.4);
+    color: #f5d04b;
+    font-size: 13px;
+    padding: 10px 16px;
+    margin: 0 auto 32px;
+    max-width: 480px;
+    border-radius: 4px;
+  }
+  #fs-landing .signin-banner button {
+    background: transparent;
+    color: var(--accent);
+    border: none;
+    font-family: var(--font-body);
+    font-weight: 600;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+    font-size: inherit;
+  }
+  #fs-landing .signin-banner button:hover { color: #fff; }
 
   #fs-landing .inner {
     position: relative;
@@ -228,6 +301,29 @@ const STYLE = `
     margin-bottom: 18px;
   }
 
+  #fs-landing .card .best {
+    margin-bottom: 14px;
+    padding: 8px 12px;
+    background: rgba(245, 208, 75, 0.1);
+    border-left: 3px solid var(--accent);
+    font-size: 12px;
+    color: #d8e0f0;
+  }
+  #fs-landing .card .best .label { color: var(--muted); }
+  #fs-landing .card .best .val {
+    font-family: var(--font-pixel);
+    font-size: 14px;
+    color: var(--accent);
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  #fs-landing .card .best.empty {
+    background: transparent;
+    border-left-color: var(--border);
+    color: var(--muted);
+    font-style: italic;
+  }
+
   #fs-landing .card .actions {
     display: flex;
     align-items: center;
@@ -320,6 +416,7 @@ function makeCard(g: GameEntry): HTMLElement {
   // doesn't conflict with the main card click target.
   const card = document.createElement("div");
   card.className = `card ${g.status}`;
+  card.dataset.slug = g.slug;
 
   const perkHtml = g.perk
     ? `<div class="perk">${
@@ -341,6 +438,7 @@ function makeCard(g: GameEntry): HTMLElement {
     <h2>${g.title}</h2>
     <div class="blurb">${g.blurb}</div>
     <div class="desc">${g.description}</div>
+    <div class="best" data-best style="display:none;"></div>
     <div class="actions">
       <a href="${playHref}" class="play"${isLive ? "" : ' onclick="event.preventDefault()"'}>
         ${isLive ? "▶ PLAY" : "COMING SOON"}
@@ -349,6 +447,47 @@ function makeCard(g: GameEntry): HTMLElement {
     </div>
   `;
   return card;
+}
+
+/// Fetch get_score for every live game and render an inline best
+/// chip on each card. Called when the wallet connects.
+async function refreshAllBests(addr: string): Promise<void> {
+  if (!CONFIG.gameHubContractId) return;
+  const client = getReadClient();
+  const pubkey = strkeyToPubkey(addr);
+
+  for (const g of GAMES) {
+    if (g.status !== "live" || g.gameId === undefined) continue;
+    const card = document.querySelector<HTMLElement>(`.card[data-slug="${g.slug}"] [data-best]`);
+    if (!card) continue;
+    card.style.display = "block";
+    card.innerHTML = `<span class="label">loading your best…</span>`;
+    try {
+      const res = await client.get_score({
+        game_id: g.gameId,
+        player_pubkey: pubkey,
+      });
+      const entry = (res.result as HighScoreEntry | undefined) ?? null;
+      if (entry) {
+        card.classList.remove("empty");
+        card.innerHTML = `<span class="label">your best</span><span class="val">${entry.score}</span>`;
+      } else {
+        card.classList.add("empty");
+        card.innerHTML = `no score yet — set one`;
+      }
+    } catch (e) {
+      card.classList.add("empty");
+      card.innerHTML = `<span class="label">couldn't load best (${e instanceof Error ? e.message.slice(0, 40) : "error"})</span>`;
+    }
+  }
+}
+
+function clearAllBests(): void {
+  document.querySelectorAll<HTMLElement>(`.card [data-best]`).forEach((el) => {
+    el.style.display = "none";
+    el.innerHTML = "";
+    el.classList.remove("empty");
+  });
 }
 
 export function mountLanding(): void {
@@ -367,9 +506,7 @@ export function mountLanding(): void {
 
   const nav = document.createElement("div");
   nav.className = "topnav";
-  nav.innerHTML = `
-    <a href="/leaderboard">📊 LEADERBOARDS</a>
-  `;
+  nav.innerHTML = `<div id="fs-topnav-wallet"></div><a href="/leaderboard">📊 LEADERBOARDS</a>`;
   root.appendChild(nav);
 
   const inner = document.createElement("div");
@@ -379,6 +516,7 @@ export function mountLanding(): void {
     <p class="subtitle">
       <span class="accent">verified</span> high scores · on-chain
     </p>
+    <div class="signin-banner" id="fs-signin-banner" style="display:none;"></div>
     <div class="grid" id="fs-landing-grid"></div>
     <div class="footer">
       leaderboards on stellar · <a href="https://github.com/enderNakamoto/flight_runner" target="_blank">github</a>
@@ -394,4 +532,59 @@ export function mountLanding(): void {
   if (game) game.style.display = "none";
 
   document.body.appendChild(root);
+
+  // ── Sign-in wiring ─────────────────────────────────────────────────
+  const walletSlot = root.querySelector<HTMLElement>("#fs-topnav-wallet")!;
+  const banner = root.querySelector<HTMLElement>("#fs-signin-banner")!;
+
+  async function doSignIn(): Promise<void> {
+    try {
+      await connect();
+      // onWalletChange will re-render and fetch bests.
+    } catch {
+      // User cancelled wallet picker — no banner, no error toast,
+      // they can hit Sign In again whenever.
+    }
+  }
+
+  function renderTopnavWallet(addr: string | null): void {
+    walletSlot.innerHTML = "";
+    if (addr) {
+      const wrap = document.createElement("span");
+      wrap.className = "signed";
+      wrap.innerHTML = `<code>${fmtAddress(addr)}</code>`;
+      const dc = document.createElement("button");
+      dc.textContent = "sign out";
+      dc.onclick = () => disconnect();
+      wrap.appendChild(dc);
+      walletSlot.appendChild(wrap);
+    } else {
+      const btn = document.createElement("button");
+      btn.className = "signin";
+      btn.textContent = "SIGN IN";
+      btn.onclick = doSignIn;
+      walletSlot.appendChild(btn);
+    }
+  }
+
+  function renderBanner(addr: string | null): void {
+    if (addr) {
+      banner.style.display = "none";
+      return;
+    }
+    banner.style.display = "block";
+    banner.innerHTML = `
+      <strong>Sign in</strong> to see your best scores on-chain.
+      <button id="fs-banner-signin">Sign in now</button>
+      <span style="color: var(--muted); margin-left: 8px;">or skip — you can sign in later to submit a score.</span>
+    `;
+    banner.querySelector<HTMLButtonElement>("#fs-banner-signin")!.onclick = doSignIn;
+  }
+
+  onWalletChange((addr) => {
+    renderTopnavWallet(addr);
+    renderBanner(addr);
+    if (addr) refreshAllBests(addr).catch(() => {});
+    else clearAllBests();
+  });
 }

@@ -1,8 +1,12 @@
 // Wallet singleton — wraps Stellar Wallets Kit so the rest of the app
 // gets a clean `connect / address / signTransaction` surface.
 //
-// Phase 5 manual flow: user clicks Connect Wallet → kit modal pops up →
-// user picks Freighter / xBull / etc. → we cache the chosen module + address.
+// Selected wallet id + address are persisted to localStorage so the
+// chosen wallet auto-reconnects across page navigations / reloads,
+// without re-prompting the user. The "auto" flow is silent: it does
+// NOT open the kit modal; it just re-uses the wallet the user already
+// authorized. If the user revoked permission externally, the silent
+// reconnect fails quietly and we fall back to the disconnected state.
 
 import {
   StellarWalletsKit,
@@ -11,6 +15,8 @@ import {
   type ISupportedWallet,
 } from "@creit.tech/stellar-wallets-kit";
 import { CONFIG } from "./config.js";
+
+const STORAGE_KEY = "flight.wallet.id";
 
 function walletNetworkFromPassphrase(p: string): WalletNetwork {
   // Map the SDK Networks constant strings to the kit's enum.
@@ -62,6 +68,7 @@ export async function connect(): Promise<string> {
           const { address: addr } = await k.getAddress();
           walletId = option.id;
           address = addr;
+          try { localStorage.setItem(STORAGE_KEY, option.id); } catch {}
           notify();
           resolve(addr);
         } catch (e) {
@@ -79,7 +86,33 @@ export async function connect(): Promise<string> {
 export function disconnect(): void {
   address = null;
   walletId = null;
+  try { localStorage.removeItem(STORAGE_KEY); } catch {}
   notify();
+}
+
+/// Silent re-connect from the persisted wallet id. Called once at app
+/// boot from main.ts. Does NOT open the kit modal. If the previously
+/// chosen wallet isn't reachable (extension uninstalled, permission
+/// revoked, etc.), this resolves quietly without notifying — the user
+/// stays in the disconnected state.
+let restoreAttempted = false;
+export async function restoreWallet(): Promise<void> {
+  if (restoreAttempted) return;
+  restoreAttempted = true;
+  let saved: string | null = null;
+  try { saved = localStorage.getItem(STORAGE_KEY); } catch { return; }
+  if (!saved) return;
+  try {
+    const k = getKit();
+    k.setWallet(saved);
+    const { address: addr } = await k.getAddress();
+    walletId = saved;
+    address = addr;
+    notify();
+  } catch {
+    // Wallet no longer reachable. Forget it.
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+  }
 }
 
 /// Used by the game-hub client as its `signTransaction` callback.
