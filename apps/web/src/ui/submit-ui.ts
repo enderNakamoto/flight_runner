@@ -22,7 +22,6 @@ import {
   type PendingProof,
 } from "../chain/pending-proof.js";
 import { proveTranscript, type ProveResult } from "../chain/relay.js";
-import { SENTINEL_PROTOCOL_URL } from "../outros.js";
 import {
   clearLatestRun,
   getLatestRun,
@@ -31,27 +30,6 @@ import {
 } from "../chain/transcript-buffer.js";
 import { connect, getAddress } from "../chain/wallet.js";
 
-// Slug → localStorage key used by that game's in-HUD BEST overlay.
-// Mirror of the same map in chain/score-sync.ts. Used here to decide
-// whether the just-played score is even worth offering to submit.
-const BEST_STORAGE_KEYS: Record<string, string> = {
-  birdstrike: "flight_scroll:best",
-};
-
-function localBestFor(slug: string): number {
-  const key = BEST_STORAGE_KEYS[slug];
-  if (!key) return 0;
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? Number.parseInt(raw, 10) || 0 : 0;
-  } catch {
-    return 0;
-  }
-}
-
-function currentGameSlug(): string {
-  return window.location.pathname.split("/").filter(Boolean)[0] ?? "";
-}
 
 const STYLE = `
   @keyframes fs-pulse {
@@ -78,27 +56,28 @@ const STYLE = `
     cursor: pointer;
     animation: fs-pulse 2.2s ease-in-out infinite;
     transition: transform 0.1s ease;
-  }
-  /* Submit-Score variant — purple/blue gradient = "the chain action" */
-  #fs-submit-btn.submit {
     background: linear-gradient(135deg, #5b3aa8 0%, #2c5dd0 100%);
     border: 2px solid #8a6df0;
   }
-  #fs-submit-btn.submit:hover {
+  #fs-submit-btn:hover {
     background: linear-gradient(135deg, #6d4ac0 0%, #3a72e8 100%);
     transform: translateX(-50%) translateY(-1px);
   }
-  /* Sentinel CTA variant — gold = partner / off-site = different tone */
-  #fs-submit-btn.sentinel {
-    background: linear-gradient(135deg, #b48a00 0%, #f5d04b 100%);
-    border: 2px solid #f5d04b;
-    color: #20140a;
-  }
-  #fs-submit-btn.sentinel:hover {
-    background: linear-gradient(135deg, #c89c12 0%, #ffdd66 100%);
-    transform: translateX(-50%) translateY(-1px);
-  }
   #fs-submit-btn:active { transform: translateX(-50%) translateY(0); }
+  /* Reassurance caption sitting directly below the button. */
+  #fs-submit-caption {
+    position: fixed;
+    left: 50%;
+    bottom: 80px;
+    transform: translateX(-50%);
+    z-index: 89;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.65);
+    text-align: center;
+    pointer-events: none;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+  }
   #fs-submit-btn .badge {
     margin-left: 10px;
     background: #f5d04b;
@@ -183,30 +162,37 @@ export function mountSubmitUI(): void {
   let btn: HTMLButtonElement | null = null;
   let modal: HTMLDivElement | null = null;
 
-  function showButton(opts: { label: string; badge?: string; variant?: "submit" | "sentinel"; onClick: () => void }) {
+  let caption: HTMLElement | null = null;
+
+  function showButton(opts: { label: string; badge?: string; captionText?: string }) {
     const html = `${opts.label}${opts.badge ? `<span class="badge">${opts.badge}</span>` : ""}`;
-    const variantClass = opts.variant === "sentinel" ? "sentinel" : "submit";
     if (btn) {
       btn.innerHTML = html;
-      btn.className = variantClass;
-      btn.onclick = opts.onClick;
-      return;
+    } else {
+      btn = document.createElement("button");
+      btn.id = "fs-submit-btn";
+      btn.innerHTML = html;
+      btn.onclick = openModal;
+      document.body.appendChild(btn);
     }
-    btn = document.createElement("button");
-    btn.id = "fs-submit-btn";
-    btn.className = variantClass;
-    btn.innerHTML = html;
-    btn.onclick = opts.onClick;
-    document.body.appendChild(btn);
+    if (opts.captionText) {
+      if (!caption) {
+        caption = document.createElement("div");
+        caption.id = "fs-submit-caption";
+        document.body.appendChild(caption);
+      }
+      caption.textContent = opts.captionText;
+    } else if (caption) {
+      caption.remove();
+      caption = null;
+    }
   }
 
   function hideButton() {
     btn?.remove();
     btn = null;
-  }
-
-  function openSentinelSite() {
-    window.open(SENTINEL_PROTOCOL_URL, "_blank", "noopener,noreferrer");
+    caption?.remove();
+    caption = null;
   }
 
   function refreshButtonVisibility() {
@@ -217,31 +203,20 @@ export function mountSubmitUI(): void {
       showButton({
         label: "🏆 Sign Pending",
         badge: `${ageMin(pending.proved_at)} min`,
-        onClick: openModal,
+        captionText: "only your highest score is recorded",
       });
       return;
     }
     if (run) {
-      // localStorage best is hydrated from chain at sign-in (see
-      // chain/score-sync.ts) so this compares against the player's
-      // actual on-chain personal-best when signed in.
-      const localBest = localBestFor(currentGameSlug());
-      if (run.score >= localBest) {
-        // New PB worth submitting — drive to the submit flow + tease
-        // Sentinel Protocol points in the modal.
-        showButton({
-          label: "🏆 Submit Score · earn Sentinel points",
-          onClick: openModal,
-        });
-      } else {
-        // Not a new PB — pivot to the Sentinel CTA so the player still
-        // engages with the partner regardless of submit-worthiness.
-        showButton({
-          label: "✈️ Cover your next flight",
-          variant: "sentinel",
-          onClick: openSentinelSite,
-        });
-      }
+      // Always invite submission — the contract enforces "only the highest
+      // score wins" via the is_pb check, so a low submit is a harmless
+      // no-op. The caption below the button tells the player the same
+      // thing in plain English so they don't worry about overwriting a
+      // good score with a bad one.
+      showButton({
+        label: "🏆 Submit Score · earn Sentinel points",
+        captionText: "only your highest score is recorded",
+      });
       return;
     }
     hideButton();
