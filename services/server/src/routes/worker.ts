@@ -7,6 +7,7 @@
 // Poll atomically claims the next pending row and flips it to 'proving'
 // so two concurrent workers can't grab the same job.
 
+import { submitScore } from "../chain.ts";
 import { CONFIG } from "../config.ts";
 import { getDb, now, type RunRow } from "../db.ts";
 
@@ -111,14 +112,30 @@ export async function postResult(req: Request, idStr: string): Promise<Response>
     return jsonError(409, `run #${id} not in 'proving' state (got '${row.proof_status}')`);
   }
 
-  // Stash artifacts. Slice 4 will hook auto-settle in here; for now the
-  // row flips to 'settled' so smoke tests can complete the lifecycle.
-  const ts = now();
+  // Stash artifacts before attempting the on-chain submit so they survive
+  // even if the chain call fails — the relay (or an admin) can retry the
+  // submit later without re-proving.
   db.prepare(
-    `UPDATE runs SET seal_hex = ?, journal_hex = ?, proof_status = 'settled', updated_at = ? WHERE id = ?`,
-  ).run(seal_hex, journal_hex, ts, id);
+    `UPDATE runs SET seal_hex = ?, journal_hex = ?, updated_at = ? WHERE id = ?`,
+  ).run(seal_hex, journal_hex, now(), id);
 
-  return Response.json({ run_id: id, proof_status: "settled" });
+  // Auto-settle: call game_hub::submit_score with the relay's keypair.
+  const submit = await submitScore(CONFIG.gameId, seal_hex, journal_hex);
+  if (submit.ok) {
+    db.prepare(
+      `UPDATE runs SET proof_status = 'settled', tx_hash = ?, error = NULL, updated_at = ? WHERE id = ?`,
+    ).run(submit.txHash, now(), id);
+    console.log(`[relay] settled run #${id} · tx ${submit.txHash}`);
+    return Response.json({ run_id: id, proof_status: "settled", tx_hash: submit.txHash });
+  }
+  db.prepare(
+    `UPDATE runs SET proof_status = 'failed', error = ?, updated_at = ? WHERE id = ?`,
+  ).run(submit.error, now(), id);
+  console.warn(`[relay] settle failed run #${id}: ${submit.error}`);
+  return Response.json(
+    { run_id: id, proof_status: "failed", error: submit.error },
+    { status: 502 },
+  );
 }
 
 export async function postError(req: Request, idStr: string): Promise<Response> {
