@@ -19,6 +19,10 @@ export const INTRO_BODY: readonly string[] = [
   "",
   "Watch your altitude. Watch your fuel.",
   "Stay airborne.",
+  "",
+  "REWARD     Top-10 scores earn Sentinel Protocol points.",
+  "           Sign in and submit on-chain — anything not",
+  "           submitted doesn't count.",
 ];
 
 export const INTRO_HINT = "PRESS ANY KEY TO BOARD";
