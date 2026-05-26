@@ -12,8 +12,9 @@ export const INTRO_BODY: readonly string[] = [
   "",
   "MISSION   Land in one piece.",
   "HAZARDS   Birds. Drones. Jets. UFOs.",
-  "REWARD    Top-10 = Sentinel points.",
-  "          Sign in. Submit on-chain.",
+  "REWARD    Top-10 leaderboard scores earn",
+  "          Sentinel Protocol points.",
+  "          Sign in + submit on-chain to count.",
 ];
 
 export const INTRO_HINT = "PRESS ANY KEY TO BOARD";
