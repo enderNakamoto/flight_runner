@@ -35,20 +35,27 @@ function readClient(): Client {
   });
 }
 
-/// Write `onChainBest` into the game's localStorage slot, but only if
-/// it beats whatever's already there. Never lowers the local high.
+/// Overwrite the game's localStorage best with `onChainBest`. The
+/// cache represents the currently-signed-in player's chain state, NOT
+/// the max value ever observed here — otherwise switching wallets in
+/// the same browser would leak the previous wallet's score into the
+/// new wallet's HUD.
+///
+/// PlayScene.commitBest() still bumps the cache during anonymous /
+/// signed-in play via its own "only if higher" guard at the local
+/// session level, so unsigned plays still build up a personal best.
 export function syncLocalBest(slug: string, onChainBest: number): void {
   const key = BEST_STORAGE_KEYS[slug];
   if (!key) return;
   try {
-    const localRaw = localStorage.getItem(key);
-    const local = localRaw ? Number.parseInt(localRaw, 10) : 0;
-    if (onChainBest > local) localStorage.setItem(key, String(onChainBest));
+    localStorage.setItem(key, String(onChainBest));
   } catch {}
 }
 
 /// One-shot: pull on-chain scores for every live game and mirror them
-/// to localStorage.
+/// to localStorage. When a wallet has no score on chain yet, the cache
+/// is cleared to 0 — that's what tells PlayScene "this is a fresh
+/// player, don't show the previous wallet's best."
 export async function syncOnChainBestsToLocalStorage(addr: string): Promise<void> {
   if (!CONFIG.gameHubContractId) return;
   const client = readClient();
@@ -61,9 +68,10 @@ export async function syncOnChainBestsToLocalStorage(addr: string): Promise<void
         player_pubkey: pubkey,
       });
       const entry = (res.result as HighScoreEntry | undefined) ?? null;
-      if (entry) syncLocalBest(g.slug, entry.score);
+      syncLocalBest(g.slug, entry ? entry.score : 0);
     } catch {
-      // ignore — local cache stays stale, contract remains the truth
+      // ignore — local cache stays whatever it was, contract remains
+      // the truth on the next sign-in
     }
   }
 }
