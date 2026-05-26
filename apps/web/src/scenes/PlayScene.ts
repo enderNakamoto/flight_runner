@@ -201,11 +201,12 @@ export class PlayScene extends Phaser.Scene {
   // rather than a CRT char-by-char animation. Whitespace and newlines
   // surrounding a word ride along with it so line breaks land naturally.
   private bodyFullText = "";
-  private bodyWordEnds: number[] = []; // end-of-word indices into bodyFullText
-  private bodyWordIndex = 0;
+  private bodyCharIndex = 0;
   private bodyTypingDone = true;
   private bodyTypeStartTime = 0;
-  private readonly bodyTypeMsPerWord = 380;
+  // Character-at-a-time reveal; tune for feel. ~28 ms ≈ 36 chars/sec —
+  // smooth at 60 fps (one char every ~1.7 frames), comfortable to read.
+  private readonly bodyTypeMsPerChar = 28;
 
   // Universal "SKIP" button shown while an overlay is up
   private skipBtnBg!: Phaser.GameObjects.Rectangle;
@@ -610,17 +611,8 @@ export class PlayScene extends Phaser.Scene {
 
   private startTyping(fullText: string): void {
     this.bodyFullText = fullText;
-    // Find the end-of-word index for every non-whitespace run. The displayed
-    // substring expands to one of these endpoints at a time, so the surrounding
-    // whitespace / newlines reveal between words automatically.
-    this.bodyWordEnds = [];
-    const re = /\S+/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(fullText)) !== null) {
-      this.bodyWordEnds.push(m.index + m[0].length);
-    }
-    this.bodyWordIndex = 0;
-    this.bodyTypingDone = this.bodyWordEnds.length === 0;
+    this.bodyCharIndex = 0;
+    this.bodyTypingDone = fullText.length === 0;
     this.bodyTypeStartTime = this.time.now;
     this.refreshBodyText();
   }
@@ -628,16 +620,16 @@ export class PlayScene extends Phaser.Scene {
   private tickTyping(): void {
     const elapsed = this.time.now - this.bodyTypeStartTime;
     const target = Math.min(
-      this.bodyWordEnds.length,
-      Math.floor(elapsed / this.bodyTypeMsPerWord) + 1,
+      this.bodyFullText.length,
+      Math.floor(elapsed / this.bodyTypeMsPerChar),
     );
-    if (target > this.bodyWordIndex) {
-      this.bodyWordIndex = target;
-      if (this.bodyWordIndex >= this.bodyWordEnds.length) {
+    if (target > this.bodyCharIndex) {
+      this.bodyCharIndex = target;
+      if (this.bodyCharIndex >= this.bodyFullText.length) {
         this.bodyTypingDone = true;
       }
     }
-    // Refresh every frame so the cursor can blink even when no new word
+    // Refresh every frame so the cursor can blink even when no new char
     // landed this tick.
     this.refreshBodyText();
   }
@@ -647,8 +639,7 @@ export class PlayScene extends Phaser.Scene {
       this.interBody.setText(this.bodyFullText);
       return;
     }
-    const visibleEnd = this.bodyWordEnds[this.bodyWordIndex - 1] ?? 0;
-    const visible = this.bodyFullText.substring(0, visibleEnd);
+    const visible = this.bodyFullText.substring(0, this.bodyCharIndex);
     // Blinking caret. Use a half-width-ish block character so it reads as a
     // teletype cursor in monospace. Swap to a space (not empty) so the line
     // doesn't reflow as the cursor toggles off.
@@ -657,7 +648,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private completeTyping(): void {
-    this.bodyWordIndex = this.bodyWordEnds.length;
+    this.bodyCharIndex = this.bodyFullText.length;
     this.bodyTypingDone = true;
     this.refreshBodyText();
   }
