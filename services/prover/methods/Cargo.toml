@@ -1,0 +1,17 @@
+[package]
+name = "flight_methods"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "RISC Zero methods crate. build.rs compiles the guest ELF and emits FLIGHT_GUEST_ID + FLIGHT_GUEST_ELF as constants."
+
+# Tells risc0-build where the guest crate lives. Path is relative to this Cargo.toml.
+[package.metadata.risc0]
+methods = ["../guest"]
+
+[build-dependencies]
+risc0-build = "3.0"
+
+[dependencies]

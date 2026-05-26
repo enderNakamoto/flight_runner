@@ -1,0 +1,22 @@
+[package]
+name = "flight_host"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "flight-host CLI — drives the RISC Zero prover over a recorded transcript and writes proof_artifacts.json."
+
+[[bin]]
+name = "flight-host"
+path = "src/main.rs"
+
+[dependencies]
+risc0-zkvm = "3.0"
+flight_methods = { path = "../methods" }
+flight_scroll_core = { path = "../core" }
+clap = { version = "4", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+anyhow = "1"
+bincode = "1"

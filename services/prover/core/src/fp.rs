@@ -134,3 +134,120 @@ mod tests {
         assert_eq!(product, fp(1280.0 * 7.5));
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// run_streaming — the entry point the zkVM guest calls.
+//
+// Input: raw transcript bytes (`u32 seed LE || u8[ticks] buttons`).
+// Output: final game state + decoded seed + SHA-256 of the input bytes.
+//
+// Why this lives in fp.rs (per spec/zk_risk_0_stellar.md §5.2): the guest's
+// import path is `fp::run_streaming`. Keep it co-located so the guest crate
+// can keep a single `use flight_scroll_core::fp::run_streaming` line.
+// ─────────────────────────────────────────────────────────────────────────────
+
+use crate::stages::Stage;
+use crate::state::create_initial_state;
+use crate::step::step_mut;
+use crate::transcript::{decode_transcript, TranscriptError};
+use crate::types::{GameState, PlayerInput};
+use sha2::{Digest, Sha256};
+
+#[derive(Debug)]
+pub struct StreamResult {
+    pub state: GameState,
+    pub seed: u32,
+    pub transcript_hash: [u8; 32],
+}
+
+#[derive(Debug)]
+pub enum StreamError {
+    BadTranscript(TranscriptError),
+    /// Bits 4..7 of `buttons` must be zero. Bits 0..3 are the four held-key
+    /// flags the game uses (UP/DOWN/LEFT/RIGHT). The architecture spec is
+    /// stricter (only UP/DOWN) but the current game wires LEFT/RIGHT to
+    /// throttle modulation — flagged for a spec update in Phase 5.
+    ReservedInputBitsSet { tick: u32, buttons: u8 },
+}
+
+impl std::fmt::Display for StreamError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StreamError::BadTranscript(e) => write!(f, "bad transcript: {e}"),
+            StreamError::ReservedInputBitsSet { tick, buttons } => {
+                write!(f, "reserved input bits set at tick {tick}: 0x{buttons:02x}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for StreamError {}
+
+const VALID_BUTTON_MASK: u8 = 0b0000_1111;
+
+pub fn run_streaming(raw_bytes: &[u8]) -> Result<StreamResult, StreamError> {
+    let decoded = decode_transcript(raw_bytes).map_err(StreamError::BadTranscript)?;
+    let mut state: GameState = create_initial_state(decoded.seed, Stage::Common);
+    for (i, &b) in decoded.buttons.iter().enumerate() {
+        if b & !VALID_BUTTON_MASK != 0 {
+            return Err(StreamError::ReservedInputBitsSet {
+                tick: i as u32,
+                buttons: b,
+            });
+        }
+        step_mut(&mut state, PlayerInput { buttons: b });
+        if state.game_over {
+            break;
+        }
+    }
+    let transcript_hash: [u8; 32] = Sha256::digest(raw_bytes).into();
+    Ok(StreamResult {
+        state,
+        seed: decoded.seed as u32,
+        transcript_hash,
+    })
+}
+
+#[cfg(test)]
+mod run_streaming_tests {
+    use super::*;
+    use crate::transcript::encode_transcript;
+    use crate::types::BTN_UP;
+
+    #[test]
+    fn empty_transcript_produces_initial_state() {
+        let buf = encode_transcript(42, &[]);
+        let r = run_streaming(&buf).unwrap();
+        assert_eq!(r.seed, 42);
+        assert_eq!(r.state.tick, 0);
+        assert!(!r.state.game_over);
+        // SHA-256 of the 4 LE bytes of seed=42.
+        let expected: [u8; 32] = Sha256::digest(&buf).into();
+        assert_eq!(r.transcript_hash, expected);
+    }
+
+    #[test]
+    fn replay_stops_on_game_over() {
+        let buf = encode_transcript(1, &vec![BTN_UP; 200]);
+        let r = run_streaming(&buf).unwrap();
+        assert!(r.state.game_over);
+        assert!(r.state.tick < 200);
+    }
+
+    #[test]
+    fn rejects_reserved_bits() {
+        // bit 4 is reserved.
+        let buf = encode_transcript(1, &[0b0001_0000]);
+        let err = run_streaming(&buf).unwrap_err();
+        assert!(matches!(
+            err,
+            StreamError::ReservedInputBitsSet { tick: 0, buttons: 0x10 }
+        ));
+    }
+
+    #[test]
+    fn rejects_short_transcript() {
+        let err = run_streaming(&[0u8, 1]).unwrap_err();
+        assert!(matches!(err, StreamError::BadTranscript(_)));
+    }
+}

@@ -5,6 +5,14 @@
 resolver = "2"
 members = [
   "services/prover/core",
+  "services/prover/methods",
+  "services/prover/host",
+]
+
+# Guest is built for riscv32im-risc0-zkvm-elf — kept out of this workspace
+# (it has its own empty [workspace] table in services/prover/guest/Cargo.toml).
+exclude = [
+  "services/prover/guest",
 ]
 
 [workspace.package]

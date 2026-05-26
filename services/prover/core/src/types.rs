@@ -174,3 +174,151 @@ mod tests {
         assert_eq!(BTN_RIGHT, 8);
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ProverOutput — 44-byte journal layout committed by the zkVM guest.
+// See spec/zk_risk_0_stellar.md §4.4. The contract decoders mirror this in
+// contracts/flight_scroll/src/lib.rs (Phase 5).
+//
+//   Offset  Size  Field             Encoding
+//     0      4    score             u32 LE
+//     4      4    ticks_survived    u32 LE
+//     8      4    seed              u32 LE
+//    12     32    transcript_hash   SHA-256 raw bytes
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub const JOURNAL_BYTES: usize = 44;
+pub const PROVER_OUTPUT_WORDS: usize = 11; // JOURNAL_BYTES / 4
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProverOutput {
+    pub score: u32,
+    pub ticks_survived: u32,
+    pub seed: u32,
+    pub transcript_hash: [u8; 32],
+}
+
+#[derive(Debug)]
+pub enum JournalError {
+    BadLen(usize),
+}
+
+impl std::fmt::Display for JournalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JournalError::BadLen(n) => write!(f, "journal must be {JOURNAL_BYTES} bytes, got {n}"),
+        }
+    }
+}
+
+impl std::error::Error for JournalError {}
+
+impl ProverOutput {
+    /// Pack as 11 little-endian u32 words for `env::commit_slice`.
+    pub fn to_journal_words(&self) -> [u32; PROVER_OUTPUT_WORDS] {
+        let mut w = [0u32; PROVER_OUTPUT_WORDS];
+        w[0] = self.score;
+        w[1] = self.ticks_survived;
+        w[2] = self.seed;
+        for i in 0..8 {
+            let o = i * 4;
+            w[3 + i] = u32::from_le_bytes([
+                self.transcript_hash[o],
+                self.transcript_hash[o + 1],
+                self.transcript_hash[o + 2],
+                self.transcript_hash[o + 3],
+            ]);
+        }
+        w
+    }
+
+    /// Flatten to the 44 raw journal bytes (host-side use; the guest commits
+    /// words directly via `to_journal_words`).
+    pub fn to_journal_bytes(&self) -> [u8; JOURNAL_BYTES] {
+        let mut out = [0u8; JOURNAL_BYTES];
+        out[0..4].copy_from_slice(&self.score.to_le_bytes());
+        out[4..8].copy_from_slice(&self.ticks_survived.to_le_bytes());
+        out[8..12].copy_from_slice(&self.seed.to_le_bytes());
+        out[12..44].copy_from_slice(&self.transcript_hash);
+        out
+    }
+
+    /// Inverse of `to_journal_bytes` — used by host + contract decoders.
+    pub fn from_journal_bytes(bytes: &[u8]) -> Result<Self, JournalError> {
+        if bytes.len() != JOURNAL_BYTES {
+            return Err(JournalError::BadLen(bytes.len()));
+        }
+        let score = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        let ticks_survived = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+        let seed = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
+        let mut transcript_hash = [0u8; 32];
+        transcript_hash.copy_from_slice(&bytes[12..44]);
+        Ok(Self { score, ticks_survived, seed, transcript_hash })
+    }
+}
+
+#[cfg(test)]
+mod journal_tests {
+    use super::*;
+
+    #[test]
+    fn round_trip_bytes() {
+        let o = ProverOutput {
+            score: 0x12345678,
+            ticks_survived: 0xABCDEF01,
+            seed: 0xDEADBEEF,
+            transcript_hash: [0xAA; 32],
+        };
+        let bytes = o.to_journal_bytes();
+        assert_eq!(bytes.len(), JOURNAL_BYTES);
+        let back = ProverOutput::from_journal_bytes(&bytes).unwrap();
+        assert_eq!(back, o);
+    }
+
+    #[test]
+    fn words_match_bytes_layout() {
+        let o = ProverOutput {
+            score: 1,
+            ticks_survived: 2,
+            seed: 3,
+            transcript_hash: {
+                let mut h = [0u8; 32];
+                for i in 0..32 { h[i] = i as u8; }
+                h
+            },
+        };
+        let words = o.to_journal_words();
+        // Reflatten words to bytes (LE) and assert they equal to_journal_bytes.
+        let mut flat = [0u8; JOURNAL_BYTES];
+        for (i, w) in words.iter().enumerate() {
+            flat[i * 4..i * 4 + 4].copy_from_slice(&w.to_le_bytes());
+        }
+        assert_eq!(flat, o.to_journal_bytes());
+    }
+
+    #[test]
+    fn from_journal_bytes_rejects_bad_len() {
+        assert!(matches!(
+            ProverOutput::from_journal_bytes(&[0u8; 43]),
+            Err(JournalError::BadLen(43))
+        ));
+    }
+
+    /// Pin: a known journal hex string must decode to the expected fields.
+    /// Anchor against drift in the byte layout.
+    #[test]
+    fn decode_pinned_hex() {
+        // score=1000 ticks=2000 seed=0xCAFEBABE hash=0x00..0x1F
+        let mut bytes = [0u8; JOURNAL_BYTES];
+        bytes[0..4].copy_from_slice(&1000u32.to_le_bytes());
+        bytes[4..8].copy_from_slice(&2000u32.to_le_bytes());
+        bytes[8..12].copy_from_slice(&0xCAFEBABE_u32.to_le_bytes());
+        for i in 0..32 { bytes[12 + i] = i as u8; }
+        let o = ProverOutput::from_journal_bytes(&bytes).unwrap();
+        assert_eq!(o.score, 1000);
+        assert_eq!(o.ticks_survived, 2000);
+        assert_eq!(o.seed, 0xCAFEBABE);
+        assert_eq!(o.transcript_hash[0], 0);
+        assert_eq!(o.transcript_hash[31], 31);
+    }
+}
