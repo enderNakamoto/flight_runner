@@ -78,7 +78,7 @@ command -v stellar >/dev/null || { echo "[deploy] stellar CLI not found" >&2; ex
 
 # ── Identity: resolve or generate ─────────────────────────────────────────
 identity_exists() {
-  stellar keys address "$1" --network "$NETWORK" >/dev/null 2>&1
+  stellar keys address "$1" >/dev/null 2>&1
 }
 
 if identity_exists "$IDENTITY"; then
