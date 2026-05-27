@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" font-family="ui-monospace, Menlo, monospace" style="image-rendering: pixelated;">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="0%" r="120%">
+      <stop offset="0%"   stop-color="#1a2750"/>
+      <stop offset="60%"  stop-color="#0a1024"/>
+      <stop offset="100%" stop-color="#050a18"/>
+    </radialGradient>
+    <pattern id="scan" patternUnits="userSpaceOnUse" width="1200" height="3">
+      <rect width="1200" height="1" fill="rgba(255,255,255,0.025)"/>
+    </pattern>
+    <filter id="pxshadow">
+      <feOffset dx="6" dy="6" result="o"/>
+      <feFlood flood-color="rgba(0,0,0,0.55)"/>
+      <feComposite in2="o" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#scan)"/>
+
+  <!-- pixel stars -->
+  <g fill="#ffffff" opacity="0.8">
+    <rect x="80"   y="70"  width="3" height="3"/>
+    <rect x="160"  y="120" width="2" height="2"/>
+    <rect x="240"  y="50"  width="2" height="2"/>
+    <rect x="340"  y="100" width="3" height="3"/>
+    <rect x="980"  y="80"  width="2" height="2"/>
+    <rect x="1080" y="140" width="3" height="3"/>
+    <rect x="1140" y="60"  width="2" height="2"/>
+    <rect x="900"  y="40"  width="2" height="2"/>
+    <rect x="450"  y="40"  width="2" height="2"/>
+    <rect x="560"  y="90"  width="2" height="2"/>
+    <rect x="700"  y="60"  width="3" height="3"/>
+    <rect x="820"  y="110" width="2" height="2"/>
+  </g>
+
+  <!-- chunky pixel plane silhouette, top-right area, tilted east -->
+  <g transform="translate(880, 230) scale(7)" fill="#f5d04b">
+    <!-- fuselage -->
+    <rect x="0"  y="6"  width="20" height="4"/>
+    <rect x="20" y="5"  width="4"  height="6"/>
+    <rect x="-3" y="7"  width="3"  height="2"/>
+    <!-- wing -->
+    <rect x="6"  y="2"  width="8"  height="4"/>
+    <!-- tail fin -->
+    <rect x="-1" y="3"  width="3"  height="4"/>
+    <!-- propeller -->
+    <rect x="24" y="6"  width="1"  height="4" fill="#cfd8dc"/>
+  </g>
+
+  <!-- treasure-chest accent (cyan) bottom-right small -->
+  <g transform="translate(1010, 480)" fill="none" stroke="#5dd3ff" stroke-width="3" stroke-linecap="square">
+    <path d="M16 50 Q16 28 40 28 L80 28 Q104 28 104 50 Z" fill="rgba(93,211,255,0.16)"/>
+    <rect x="16" y="50" width="88" height="38" fill="rgba(93,211,255,0.08)"/>
+    <line x1="36" y1="28" x2="36" y2="88"/>
+    <line x1="84" y1="28" x2="84" y2="88"/>
+    <rect x="56" y="58" width="8" height="14" fill="#5dd3ff" stroke="none"/>
+  </g>
+
+  <!-- title bar -->
+  <g transform="translate(80, 200)" filter="url(#pxshadow)">
+    <text x="0" y="0" font-family="'Courier New', monospace" font-weight="900" font-size="120" fill="#ffffff" letter-spacing="6">BIRDSTRIKE</text>
+  </g>
+
+  <!-- sub-headline -->
+  <g transform="translate(80, 260)">
+    <rect x="0" y="0" width="14" height="14" fill="#f5d04b"/>
+    <text x="26" y="13" font-size="22" fill="#f5d04b" letter-spacing="3" font-weight="700">VERIFIED  HIGH  SCORES</text>
+    <text x="26" y="48" font-size="20" fill="#94a3c6" letter-spacing="2">on Stellar · every leaderboard entry is a ZK-proven replay</text>
+  </g>
+
+  <!-- proofworks tag bottom-left -->
+  <g transform="translate(80, 560)">
+    <text font-size="20" fill="#5dd3ff" letter-spacing="3" font-weight="700">PROOFWORKS  ARCADE</text>
+    <text x="0" y="28" font-size="14" fill="#94a3c6" letter-spacing="1">sentinel.xyz/birdstrike</text>
+  </g>
+
+  <!-- pixel-art frame border -->
+  <rect x="4" y="4" width="1192" height="622" fill="none" stroke="#3a4a6b" stroke-width="4"/>
+</svg>

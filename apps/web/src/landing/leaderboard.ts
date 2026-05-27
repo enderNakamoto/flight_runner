@@ -12,6 +12,8 @@ import { Buffer } from "buffer";
 import { CONFIG, requireContractId } from "../chain/config.js";
 import { Client, type HighScoreEntry } from "@flight/game-hub-client";
 import { connect, getAddress, onWalletChange } from "../chain/wallet.js";
+import { maybeCelebrate } from "../share/celebration.js";
+import { bindShareButtons, shareRankButtonsHtml } from "../share/share-rank-button.js";
 import { rewardsCalloutHtml } from "../ui/rewards-callout.js";
 import { GAMES, type GameEntry } from "./games.js";
 
@@ -305,15 +307,59 @@ export function mountGameLeaderboard(game: GameEntry): void {
   const topnMetaEl = root.querySelector<HTMLDivElement>("#fs-lb-topn-meta")!;
   const youEl = root.querySelector<HTMLDivElement>("#fs-lb-you")!;
 
+  // Two async sources feed this page:
+  //   - the JSON snapshot (top-N + per-row rank)
+  //   - on-chain `get_score` for the connected wallet
+  // We cache both as they land so:
+  //   1. the "Your best" tile can show the player's rank even if get_score
+  //      resolved first (re-render once snapshot lands), and
+  //   2. the celebration UI only fires once BOTH pieces are in (so we
+  //      don't toast "not in top-N" when the snapshot is just slow).
+  let snapshot: Snapshot | null = null;
+  let lastEntry: HighScoreEntry | null = null;
+  let lastAddr: string | null = null;
+  let celebrationFired = false;
+
   // ── Top-N: fetched from the static JSON the indexer cron writes. ──
-  void renderTopN(game.slug, topnEl, topnMetaEl, getAddress());
+  void renderTopN(game.slug, topnEl, topnMetaEl, getAddress()).then((s) => {
+    snapshot = s;
+    // If get_score resolved first, re-render so the rank line + share
+    // buttons reflect the freshly-arrived snapshot.
+    if (lastEntry && lastAddr) renderScore(lastAddr, lastEntry);
+    tryFireCelebration();
+  });
 
   // Re-highlight the "you" row when the wallet connects/disconnects.
   onWalletChange((addr) => {
-    void renderTopN(game.slug, topnEl, topnMetaEl, addr);
+    void renderTopN(game.slug, topnEl, topnMetaEl, addr).then((s) => {
+      snapshot = s;
+      if (lastEntry && lastAddr) renderScore(lastAddr, lastEntry);
+      tryFireCelebration();
+    });
   });
 
+  // Look the player's address up in the cached snapshot and return their
+  // rank if present, or null if they're not in the top-N (or no snapshot yet).
+  function rankFromSnapshot(addr: string): number | null {
+    if (!snapshot) return null;
+    const hit = snapshot.entries.find((e) => e.address === addr);
+    return hit ? hit.rank : null;
+  }
+
+  function tryFireCelebration(): void {
+    if (celebrationFired) return;
+    if (!snapshot || !lastEntry || !lastAddr) return;
+    celebrationFired = true;
+    const rank = rankFromSnapshot(lastAddr);
+    maybeCelebrate({ slug: game.slug, rank, score: lastEntry.score });
+  }
+
   function renderConnect() {
+    // Disconnect path — clear cached identity so the next connect doesn't
+    // re-fire a stale celebration.
+    lastAddr = null;
+    lastEntry = null;
+    celebrationFired = false;
     youEl.innerHTML = `
       <div style="margin-bottom: 14px; color: var(--muted); font-size: 13px;">
         Connect your Stellar wallet to see your best run on chain.
@@ -346,6 +392,11 @@ export function mountGameLeaderboard(game: GameEntry): void {
   }
 
   function renderScore(addr: string, e: HighScoreEntry | null) {
+    // Cache so we can re-render once the snapshot lands (the rank line
+    // depends on both data sources).
+    lastAddr = addr;
+    lastEntry = e;
+
     if (!e) {
       youEl.innerHTML = `
         <div class="addr"><code>${fmtAddress(addr)}</code></div>
@@ -357,15 +408,27 @@ export function mountGameLeaderboard(game: GameEntry): void {
       return;
     }
     const settledDate = new Date(Number(e.settled_at) * 1000).toISOString().slice(0, 10);
+    const rank = rankFromSnapshot(addr);
+    const rankLine = rank
+      ? `<div class="row"><span class="label">rank</span><span class="val">#${rank}</span></div>`
+      : snapshot
+        ? `<div class="row"><span class="label">rank</span><span class="val" style="color: var(--muted);">not in top-${snapshot.top_n} yet</span></div>`
+        : `<div class="row"><span class="label">rank</span><span class="val" style="color: var(--muted);">loading…</span></div>`;
     youEl.innerHTML = `
       <div class="addr"><code>${fmtAddress(addr)}</code></div>
       <div class="result">
         <div class="row"><span class="label">score</span><span class="val big">${e.score}</span></div>
+        ${rankLine}
         <div class="row"><span class="label">ticks survived</span><span class="val">${e.ticks_survived}</span></div>
         <div class="row"><span class="label">seed</span><code>0x${(e.seed >>> 0).toString(16).padStart(8, "0")}</code></div>
         <div class="row"><span class="label">settled</span>${settledDate}</div>
+        <div class="row" style="margin-top: 14px;">
+          ${shareRankButtonsHtml({ rank, score: e.score, withLabel: true })}
+        </div>
       </div>
     `;
+    bindShareButtons(youEl);
+    tryFireCelebration();
   }
 
   async function fetchAndRender(addr: string) {
@@ -479,7 +542,7 @@ async function renderTopN(
   topnEl: HTMLElement,
   metaEl: HTMLElement,
   youAddr: string | null,
-): Promise<void> {
+): Promise<Snapshot | null> {
   topnEl.innerHTML = `<div class="result empty" style="padding: 18px;">Loading top scores…</div>`;
   metaEl.textContent = "";
   try {
@@ -487,12 +550,14 @@ async function renderTopN(
     if (!res.ok) {
       // 404 = indexer hasn't written a snapshot yet for this game.
       topnEl.innerHTML = `<div class="result empty" style="padding: 18px;">Top scores coming soon.</div>`;
-      return;
+      return null;
     }
     const snap = (await res.json()) as Snapshot;
     topnEl.innerHTML = renderTopNRows(snap, youAddr);
     metaEl.textContent = renderTopNMeta(snap);
+    return snap;
   } catch (e) {
     topnEl.innerHTML = `<div class="result err" style="padding: 18px;">Couldn't load top scores: ${e instanceof Error ? e.message : String(e)}</div>`;
+    return null;
   }
 }
