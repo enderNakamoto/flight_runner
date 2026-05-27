@@ -1,22 +1,33 @@
-//! game_hub — multi-game Soroban host (simplified).
+//! game_hub — multi-game Soroban host (minimum-viable).
 //!
-//! Single contract that hosts an arbitrary number of RISC Zero–verified
-//! games. Admin registers each game with its own `image_id`. Players run
-//! games **entirely off-chain**; only when they want to record a high
-//! score do they prove the run and submit it.
+//! Single contract that hosts any number of RISC Zero–verified games.
+//! Admin registers each game by pinning its 32-byte ELF `image_id`.
+//! Players run games entirely off-chain; only when they want to record
+//! a score do they prove and submit.
 //!
-//! Anti-cheat model:
+//! Anti-cheat:
 //! - The proof binds to the player via the 32-byte ED25519 pubkey
-//!   committed inside the journal. The contract stores high scores keyed
-//!   by that pubkey, so anyone can submit on behalf of anyone — the
+//!   committed inside the journal. The contract stores high scores
+//!   keyed by that pubkey, so anyone can submit on anyone's behalf —
 //!   credit always flows to whoever the proof committed to.
-//! - The contract makes no claim about seed fairness. A determined player
-//!   can grind seeds offline; this is acceptable for v1 because bots are
-//!   the bigger threat and `start_run` wouldn't have stopped them anyway.
+//! - The contract makes no claim about seed fairness. A determined
+//!   player can grind seeds offline; bots are the bigger threat and
+//!   `start_run` wouldn't have stopped them anyway.
 //!
 //! Storage layout (see `DataKey`):
-//!   - Instance:  `Admin`, `Verifier`
-//!   - Persistent: `Game(u32)`, `HighScore(u32, BytesN<32>)`
+//!   - Instance:   `Admin`, `Verifier`
+//!   - Persistent: `ImageId(u32)`,
+//!                 `HighScore(u32, BytesN<32>)`,
+//!                 `PlayerCount(u32)`,
+//!                 `PlayerByIndex(u32, u32)`,
+//!                 `PlayerSeen(u32, BytesN<32>)`
+//!
+//! Enumeration:
+//! - Up to `MAX_PLAYERS_PER_GAME = 1500` players per game are tracked
+//!   in an indexed table (`PlayerByIndex` + `PlayerSeen` for O(1)
+//!   membership). New players past the cap **silently skip** the
+//!   enumeration — their `HighScore` is still recorded, they just
+//!   don't appear in the public top-N leaderboard.
 //!
 //! Journal layout (76 bytes — mirrored in services/prover/core/src/types.rs):
 //!   - 0..4   score          u32 LE
@@ -29,7 +40,7 @@
 
 use soroban_sdk::{
     contract, contractclient, contracterror, contractimpl, contracttype, symbol_short, Address,
-    Bytes, BytesN, Env, String,
+    Bytes, BytesN, Env, Vec,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,12 +56,22 @@ pub trait Verifier {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Constants — pinned by the RISC Zero proof format. See
-// services/prover/core/src/types.rs and spec/zk_risk_0_stellar.md §4.5.
+// Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub const JOURNAL_SIZE: u32 = 76;
 pub const SEAL_SIZE: u32 = 260;
+
+/// Hard cap on per-game enumerated players. Once a game reaches this many
+/// unique submitters, additional new players still have their `HighScore`
+/// recorded but are not indexed.
+pub const MAX_PLAYERS_PER_GAME: u32 = 1500;
+
+/// Maximum page size for `get_players_page`. Bounds a single read tx's
+/// ledger-entry budget — Soroban caps `total footprint ledger entries`
+/// at 100, and the contract-instance + code entries take a couple of
+/// slots, so 50 player entries per page leaves comfortable headroom.
+pub const MAX_PAGE_SIZE: u32 = 50;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Errors — keep numeric values stable across releases (clients hard-code them).
@@ -65,7 +86,8 @@ pub enum Error {
     Unauthorized = 3,
     GameNotFound = 4,
     GameAlreadyExists = 5,
-    GamePaused = 6,
+    // 6 was GamePaused — removed; admin can rotate image_id to junk to
+    // effectively pause if ever needed.
     InvalidSeal = 7,
     InvalidJournal = 8,
 }
@@ -79,28 +101,26 @@ pub enum Error {
 pub enum DataKey {
     Admin,
     Verifier,
-    /// Per-game metadata. Persistent.
-    Game(u32),
+    /// Pinned ELF image hash for a given game. Persistent.
+    ImageId(u32),
     /// Player's personal-best score for a game, keyed by the 32-byte
     /// ED25519 pubkey committed in the proof's journal. Persistent.
     HighScore(u32, BytesN<32>),
+    /// Number of distinct enumerated players for a game (0..=MAX_PLAYERS_PER_GAME).
+    /// Persistent.
+    PlayerCount(u32),
+    /// Indexed list of enumerated players. `PlayerByIndex(game_id, i)` is
+    /// the i-th unique submitter; valid for `i in 0..PlayerCount(game_id)`.
+    /// Persistent.
+    PlayerByIndex(u32, u32),
+    /// O(1) "have I already enumerated this pubkey?" membership flag.
+    /// Persistent.
+    PlayerSeen(u32, BytesN<32>),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Value types
 // ─────────────────────────────────────────────────────────────────────────────
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GameMeta {
-    /// 32-byte RISC Zero guest image ID. Verifier accepts proofs only for
-    /// this exact ELF.
-    pub image_id: BytesN<32>,
-    /// Human-readable slug, e.g. "flight_scroll".
-    pub name: String,
-    /// Admin kill switch — when true, `submit_score` rejects.
-    pub paused: bool,
-}
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -167,23 +187,15 @@ impl GameHub {
         Ok(())
     }
 
-    pub fn add_game(
-        env: Env,
-        game_id: u32,
-        image_id: BytesN<32>,
-        name: String,
-    ) -> Result<(), Error> {
+    pub fn add_game(env: Env, game_id: u32, image_id: BytesN<32>) -> Result<(), Error> {
         let admin = require_admin(&env)?;
         admin.require_auth();
-        if env.storage().persistent().has(&DataKey::Game(game_id)) {
+        if env.storage().persistent().has(&DataKey::ImageId(game_id)) {
             return Err(Error::GameAlreadyExists);
         }
-        let meta = GameMeta {
-            image_id: image_id.clone(),
-            name,
-            paused: false,
-        };
-        env.storage().persistent().set(&DataKey::Game(game_id), &meta);
+        env.storage()
+            .persistent()
+            .set(&DataKey::ImageId(game_id), &image_id);
         env.events()
             .publish((symbol_short!("addgame"), game_id), image_id);
         Ok(())
@@ -192,30 +204,14 @@ impl GameHub {
     pub fn set_image_id(env: Env, game_id: u32, new_image_id: BytesN<32>) -> Result<(), Error> {
         let admin = require_admin(&env)?;
         admin.require_auth();
-        let mut meta: GameMeta = env
-            .storage()
+        if !env.storage().persistent().has(&DataKey::ImageId(game_id)) {
+            return Err(Error::GameNotFound);
+        }
+        env.storage()
             .persistent()
-            .get(&DataKey::Game(game_id))
-            .ok_or(Error::GameNotFound)?;
-        meta.image_id = new_image_id.clone();
-        env.storage().persistent().set(&DataKey::Game(game_id), &meta);
+            .set(&DataKey::ImageId(game_id), &new_image_id);
         env.events()
             .publish((symbol_short!("setimg"), game_id), new_image_id);
-        Ok(())
-    }
-
-    pub fn set_paused(env: Env, game_id: u32, paused: bool) -> Result<(), Error> {
-        let admin = require_admin(&env)?;
-        admin.require_auth();
-        let mut meta: GameMeta = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Game(game_id))
-            .ok_or(Error::GameNotFound)?;
-        meta.paused = paused;
-        env.storage().persistent().set(&DataKey::Game(game_id), &meta);
-        env.events()
-            .publish((symbol_short!("paused"), game_id), paused);
         Ok(())
     }
 
@@ -237,7 +233,12 @@ impl GameHub {
     ///
     /// PB updates only when `(score, ticks_survived)` strictly exceeds
     /// the existing entry (ties broken by ticks). Lower scores are
-    /// rejected with no state change — saves gas vs. always writing.
+    /// silently kept-out and save the storage write.
+    ///
+    /// Enumeration: on a player's first ever submission for this game,
+    /// they're added to the indexed `PlayerByIndex` table — unless that
+    /// table is already at `MAX_PLAYERS_PER_GAME`, in which case the
+    /// enumeration is **silently skipped** (HighScore is still written).
     pub fn submit_score(env: Env, game_id: u32, seal: Bytes, journal: Bytes) -> Result<(), Error> {
         if seal.len() != SEAL_SIZE {
             return Err(Error::InvalidSeal);
@@ -246,14 +247,11 @@ impl GameHub {
             return Err(Error::InvalidJournal);
         }
 
-        let meta: GameMeta = env
+        let image_id: BytesN<32> = env
             .storage()
             .persistent()
-            .get(&DataKey::Game(game_id))
+            .get(&DataKey::ImageId(game_id))
             .ok_or(Error::GameNotFound)?;
-        if meta.paused {
-            return Err(Error::GamePaused);
-        }
 
         let journal_digest = env.crypto().sha256(&journal);
         let journal_digest_bytes = BytesN::from_array(&env, &journal_digest.to_array());
@@ -264,7 +262,7 @@ impl GameHub {
             .get(&DataKey::Verifier)
             .ok_or(Error::NotInitialized)?;
         let verifier = VerifierClient::new(&env, &verifier_addr);
-        verifier.verify(&seal, &meta.image_id, &journal_digest_bytes);
+        verifier.verify(&seal, &image_id, &journal_digest_bytes);
 
         // Decode journal — layout matches services/prover/core/src/types.rs.
         let score = read_u32_le(&journal, 0);
@@ -272,6 +270,7 @@ impl GameHub {
         let seed = read_u32_le(&journal, 8);
         let player_pubkey = read_player_pubkey(&env, &journal);
 
+        // ── HighScore update ───────────────────────────────────────────
         let hs_key = DataKey::HighScore(game_id, player_pubkey.clone());
         let existing: Option<HighScoreEntry> = env.storage().persistent().get(&hs_key);
         let is_pb = match &existing {
@@ -294,6 +293,35 @@ impl GameHub {
             );
         }
 
+        // ── Enumeration (silent-skip past cap) ────────────────────────
+        let seen_key = DataKey::PlayerSeen(game_id, player_pubkey.clone());
+        let already_seen: bool = env
+            .storage()
+            .persistent()
+            .get(&seen_key)
+            .unwrap_or(false);
+        if !already_seen {
+            let count: u32 = env
+                .storage()
+                .persistent()
+                .get(&DataKey::PlayerCount(game_id))
+                .unwrap_or(0);
+            if count < MAX_PLAYERS_PER_GAME {
+                env.storage().persistent().set(&seen_key, &true);
+                env.storage()
+                    .persistent()
+                    .set(&DataKey::PlayerByIndex(game_id, count), &player_pubkey);
+                env.storage()
+                    .persistent()
+                    .set(&DataKey::PlayerCount(game_id), &(count + 1));
+                env.events().publish(
+                    (symbol_short!("newplayr"), game_id),
+                    (player_pubkey.clone(), count + 1),
+                );
+            }
+            // else: silent skip — score still landed in HighScore.
+        }
+
         env.events()
             .publish((symbol_short!("settled"), game_id, player_pubkey), (score, ticks));
         Ok(())
@@ -311,8 +339,53 @@ impl GameHub {
             .get(&DataKey::HighScore(game_id, player_pubkey))
     }
 
-    pub fn get_game(env: Env, game_id: u32) -> Option<GameMeta> {
-        env.storage().persistent().get(&DataKey::Game(game_id))
+    pub fn get_image_id(env: Env, game_id: u32) -> Option<BytesN<32>> {
+        env.storage().persistent().get(&DataKey::ImageId(game_id))
+    }
+
+    pub fn get_player_count(env: Env, game_id: u32) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::PlayerCount(game_id))
+            .unwrap_or(0)
+    }
+
+    pub fn get_player_at(env: Env, game_id: u32, idx: u32) -> Option<BytesN<32>> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::PlayerByIndex(game_id, idx))
+    }
+
+    /// Batched read for indexer pagination — returns players in
+    /// `[start, end)` index range, capped at `MAX_PAGE_SIZE` entries
+    /// to bound the tx's read-entry budget. End-of-table is signalled
+    /// by a shorter-than-requested return.
+    pub fn get_players_page(
+        env: Env,
+        game_id: u32,
+        start: u32,
+        end: u32,
+    ) -> Vec<BytesN<32>> {
+        let mut out = Vec::new(&env);
+        if end <= start {
+            return out;
+        }
+        let mut span = end - start;
+        if span > MAX_PAGE_SIZE {
+            span = MAX_PAGE_SIZE;
+        }
+        for i in 0..span {
+            if let Some(pk) = env
+                .storage()
+                .persistent()
+                .get::<DataKey, BytesN<32>>(&DataKey::PlayerByIndex(game_id, start + i))
+            {
+                out.push_back(pk);
+            } else {
+                break;
+            }
+        }
+        out
     }
 }
 

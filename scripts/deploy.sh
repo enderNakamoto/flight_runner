@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # deploy.sh — deploy mock_verifier + game_hub, initialize, register
-# flight_scroll (game_id=1), then smoke-test with get_game.
+# flight_scroll (game_id=1), then smoke-test with get_image_id.
 #
 # Usage:
 #   scripts/deploy.sh                           # testnet, auto-generate + friendbot-fund
@@ -154,17 +154,17 @@ stellar contract invoke --id "$HUB_ID" --source "$IDENTITY" --network "$NETWORK"
   -- initialize --admin "$DEPLOYER_ADDR" --verifier "$MOCK_ID"
 
 # ── Register flight_scroll as game_id=1 ───────────────────────────────────
-echo "[deploy] game_hub::add_game(1, image_id, \"flight_scroll\") …"
+echo "[deploy] game_hub::add_game(1, image_id) …"
 stellar contract invoke --id "$HUB_ID" --source "$IDENTITY" --network "$NETWORK" \
-  -- add_game --game_id 1 --image_id "$IMAGE_ID" --name "flight_scroll"
+  -- add_game --game_id 1 --image_id "$IMAGE_ID"
 
-# ── Smoke test: get_game(1) ───────────────────────────────────────────────
-echo "[deploy] smoke: get_game(1) …"
+# ── Smoke test: get_image_id(1) ───────────────────────────────────────────
+echo "[deploy] smoke: get_image_id(1) …"
 GAME_OUT="$(stellar contract invoke --id "$HUB_ID" --source "$IDENTITY" --network "$NETWORK" \
-  -- get_game --game_id 1)"
-echo "[deploy] get_game(1) returned: $GAME_OUT"
+  -- get_image_id --game_id 1)"
+echo "[deploy] get_image_id(1) returned: $GAME_OUT"
 if ! echo "$GAME_OUT" | grep -q "$IMAGE_ID"; then
-  echo "[deploy] ⚠️  get_game did not echo the expected image_id — investigate." >&2
+  echo "[deploy] ⚠️  get_image_id did not echo the expected image_id — investigate." >&2
   exit 1
 fi
 echo "[deploy] ✅ smoke passed — game_id 1 registered with the right image_id."

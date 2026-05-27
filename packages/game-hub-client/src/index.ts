@@ -39,29 +39,11 @@ export const Errors = {
   3: {message:"Unauthorized"},
   4: {message:"GameNotFound"},
   5: {message:"GameAlreadyExists"},
-  6: {message:"GamePaused"},
   7: {message:"InvalidSeal"},
   8: {message:"InvalidJournal"}
 }
 
-export type DataKey = {tag: "Admin", values: void} | {tag: "Verifier", values: void} | {tag: "Game", values: readonly [u32]} | {tag: "HighScore", values: readonly [u32, Buffer]};
-
-
-export interface GameMeta {
-  /**
- * 32-byte RISC Zero guest image ID. Verifier accepts proofs only for
- * this exact ELF.
- */
-image_id: Buffer;
-  /**
- * Human-readable slug, e.g. "flight_scroll".
- */
-name: string;
-  /**
- * Admin kill switch — when true, `submit_score` rejects.
- */
-paused: boolean;
-}
+export type DataKey = {tag: "Admin", values: void} | {tag: "Verifier", values: void} | {tag: "ImageId", values: readonly [u32]} | {tag: "HighScore", values: readonly [u32, Buffer]} | {tag: "PlayerCount", values: readonly [u32]} | {tag: "PlayerByIndex", values: readonly [u32, u32]} | {tag: "PlayerSeen", values: readonly [u32, Buffer]};
 
 
 export interface HighScoreEntry {
@@ -83,12 +65,7 @@ export interface Client {
   /**
    * Construct and simulate a add_game transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
-  add_game: ({game_id, image_id, name}: {game_id: u32, image_id: Buffer, name: string}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
-
-  /**
-   * Construct and simulate a get_game transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   */
-  get_game: ({game_id}: {game_id: u32}, options?: MethodOptions) => Promise<AssembledTransaction<Option<GameMeta>>>
+  add_game: ({game_id, image_id}: {game_id: u32, image_id: Buffer}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
 
   /**
    * Construct and simulate a get_score transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -101,9 +78,9 @@ export interface Client {
   initialize: ({admin, verifier}: {admin: string, verifier: string}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
 
   /**
-   * Construct and simulate a set_paused transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Construct and simulate a get_image_id transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
-  set_paused: ({game_id, paused}: {game_id: u32, paused: boolean}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
+  get_image_id: ({game_id}: {game_id: u32}, options?: MethodOptions) => Promise<AssembledTransaction<Option<Buffer>>>
 
   /**
    * Construct and simulate a rotate_admin transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -124,9 +101,33 @@ export interface Client {
    * 
    * PB updates only when `(score, ticks_survived)` strictly exceeds
    * the existing entry (ties broken by ticks). Lower scores are
-   * rejected with no state change — saves gas vs. always writing.
+   * silently kept-out and save the storage write.
+   * 
+   * Enumeration: on a player's first ever submission for this game,
+   * they're added to the indexed `PlayerByIndex` table — unless that
+   * table is already at `MAX_PLAYERS_PER_GAME`, in which case the
+   * enumeration is **silently skipped** (HighScore is still written).
    */
   submit_score: ({game_id, seal, journal}: {game_id: u32, seal: Buffer, journal: Buffer}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
+
+  /**
+   * Construct and simulate a get_player_at transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  get_player_at: ({game_id, idx}: {game_id: u32, idx: u32}, options?: MethodOptions) => Promise<AssembledTransaction<Option<Buffer>>>
+
+  /**
+   * Construct and simulate a get_player_count transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  get_player_count: ({game_id}: {game_id: u32}, options?: MethodOptions) => Promise<AssembledTransaction<u32>>
+
+  /**
+   * Construct and simulate a get_players_page transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Batched read for indexer pagination — returns players in
+   * `[start, end)` index range, capped at `MAX_PAGE_SIZE` entries
+   * to bound the tx's read-entry budget. End-of-table is signalled
+   * by a shorter-than-requested return.
+   */
+  get_players_page: ({game_id, start, end}: {game_id: u32, start: u32, end: u32}, options?: MethodOptions) => Promise<AssembledTransaction<Array<Buffer>>>
 
 }
 export class Client extends ContractClient {
@@ -146,29 +147,32 @@ export class Client extends ContractClient {
   }
   constructor(public readonly options: ContractClientOptions) {
     super(
-      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAACAAAAAAAAAASQWxyZWFkeUluaXRpYWxpemVkAAAAAAABAAAAAAAAAA5Ob3RJbml0aWFsaXplZAAAAAAAAgAAAAAAAAAMVW5hdXRob3JpemVkAAAAAwAAAAAAAAAMR2FtZU5vdEZvdW5kAAAABAAAAAAAAAARR2FtZUFscmVhZHlFeGlzdHMAAAAAAAAFAAAAAAAAAApHYW1lUGF1c2VkAAAAAAAGAAAAAAAAAAtJbnZhbGlkU2VhbAAAAAAHAAAAAAAAAA5JbnZhbGlkSm91cm5hbAAAAAAACA==",
-        "AAAAAgAAAAAAAAAAAAAAB0RhdGFLZXkAAAAABAAAAAAAAAAAAAAABUFkbWluAAAAAAAAAAAAAAAAAAAIVmVyaWZpZXIAAAABAAAAHlBlci1nYW1lIG1ldGFkYXRhLiBQZXJzaXN0ZW50LgAAAAAABEdhbWUAAAABAAAABAAAAAEAAAB6UGxheWVyJ3MgcGVyc29uYWwtYmVzdCBzY29yZSBmb3IgYSBnYW1lLCBrZXllZCBieSB0aGUgMzItYnl0ZQpFRDI1NTE5IHB1YmtleSBjb21taXR0ZWQgaW4gdGhlIHByb29mJ3Mgam91cm5hbC4gUGVyc2lzdGVudC4AAAAAAAlIaWdoU2NvcmUAAAAAAAACAAAABAAAA+4AAAAg",
-        "AAAAAQAAAAAAAAAAAAAACEdhbWVNZXRhAAAAAwAAAFIzMi1ieXRlIFJJU0MgWmVybyBndWVzdCBpbWFnZSBJRC4gVmVyaWZpZXIgYWNjZXB0cyBwcm9vZnMgb25seSBmb3IKdGhpcyBleGFjdCBFTEYuAAAAAAAIaW1hZ2VfaWQAAAPuAAAAIAAAACpIdW1hbi1yZWFkYWJsZSBzbHVnLCBlLmcuICJmbGlnaHRfc2Nyb2xsIi4AAAAAAARuYW1lAAAAEAAAADhBZG1pbiBraWxsIHN3aXRjaCDigJQgd2hlbiB0cnVlLCBgc3VibWl0X3Njb3JlYCByZWplY3RzLgAAAAZwYXVzZWQAAAAAAAE=",
-        "AAAAAAAAAAAAAAAIYWRkX2dhbWUAAAADAAAAAAAAAAdnYW1lX2lkAAAAAAQAAAAAAAAACGltYWdlX2lkAAAD7gAAACAAAAAAAAAABG5hbWUAAAAQAAAAAQAAA+kAAAACAAAAAw==",
-        "AAAAAAAAAAAAAAAIZ2V0X2dhbWUAAAABAAAAAAAAAAdnYW1lX2lkAAAAAAQAAAABAAAD6AAAB9AAAAAIR2FtZU1ldGE=",
+      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAABwAAAAAAAAASQWxyZWFkeUluaXRpYWxpemVkAAAAAAABAAAAAAAAAA5Ob3RJbml0aWFsaXplZAAAAAAAAgAAAAAAAAAMVW5hdXRob3JpemVkAAAAAwAAAAAAAAAMR2FtZU5vdEZvdW5kAAAABAAAAAAAAAARR2FtZUFscmVhZHlFeGlzdHMAAAAAAAAFAAAAAAAAAAtJbnZhbGlkU2VhbAAAAAAHAAAAAAAAAA5JbnZhbGlkSm91cm5hbAAAAAAACA==",
+        "AAAAAgAAAAAAAAAAAAAAB0RhdGFLZXkAAAAABwAAAAAAAAAAAAAABUFkbWluAAAAAAAAAAAAAAAAAAAIVmVyaWZpZXIAAAABAAAAM1Bpbm5lZCBFTEYgaW1hZ2UgaGFzaCBmb3IgYSBnaXZlbiBnYW1lLiBQZXJzaXN0ZW50LgAAAAAHSW1hZ2VJZAAAAAABAAAABAAAAAEAAAB6UGxheWVyJ3MgcGVyc29uYWwtYmVzdCBzY29yZSBmb3IgYSBnYW1lLCBrZXllZCBieSB0aGUgMzItYnl0ZQpFRDI1NTE5IHB1YmtleSBjb21taXR0ZWQgaW4gdGhlIHByb29mJ3Mgam91cm5hbC4gUGVyc2lzdGVudC4AAAAAAAlIaWdoU2NvcmUAAAAAAAACAAAABAAAA+4AAAAgAAAAAQAAAFhOdW1iZXIgb2YgZGlzdGluY3QgZW51bWVyYXRlZCBwbGF5ZXJzIGZvciBhIGdhbWUgKDAuLj1NQVhfUExBWUVSU19QRVJfR0FNRSkuClBlcnNpc3RlbnQuAAAAC1BsYXllckNvdW50AAAAAAEAAAAEAAAAAQAAAJNJbmRleGVkIGxpc3Qgb2YgZW51bWVyYXRlZCBwbGF5ZXJzLiBgUGxheWVyQnlJbmRleChnYW1lX2lkLCBpKWAgaXMKdGhlIGktdGggdW5pcXVlIHN1Ym1pdHRlcjsgdmFsaWQgZm9yIGBpIGluIDAuLlBsYXllckNvdW50KGdhbWVfaWQpYC4KUGVyc2lzdGVudC4AAAAADVBsYXllckJ5SW5kZXgAAAAAAAACAAAABAAAAAQAAAABAAAASk8oMSkgImhhdmUgSSBhbHJlYWR5IGVudW1lcmF0ZWQgdGhpcyBwdWJrZXk/IiBtZW1iZXJzaGlwIGZsYWcuClBlcnNpc3RlbnQuAAAAAAAKUGxheWVyU2VlbgAAAAAAAgAAAAQAAAPuAAAAIA==",
+        "AAAAAAAAAAAAAAAIYWRkX2dhbWUAAAACAAAAAAAAAAdnYW1lX2lkAAAAAAQAAAAAAAAACGltYWdlX2lkAAAD7gAAACAAAAABAAAD6QAAAAIAAAAD",
         "AAAAAAAAAAAAAAAJZ2V0X3Njb3JlAAAAAAAAAgAAAAAAAAAHZ2FtZV9pZAAAAAAEAAAAAAAAAA1wbGF5ZXJfcHVia2V5AAAAAAAD7gAAACAAAAABAAAD6AAAB9AAAAAOSGlnaFNjb3JlRW50cnkAAA==",
         "AAAAAAAAAAAAAAAKaW5pdGlhbGl6ZQAAAAAAAgAAAAAAAAAFYWRtaW4AAAAAAAATAAAAAAAAAAh2ZXJpZmllcgAAABMAAAABAAAD6QAAAAIAAAAD",
-        "AAAAAAAAAAAAAAAKc2V0X3BhdXNlZAAAAAAAAgAAAAAAAAAHZ2FtZV9pZAAAAAAEAAAAAAAAAAZwYXVzZWQAAAAAAAEAAAABAAAD6QAAAAIAAAAD",
+        "AAAAAAAAAAAAAAAMZ2V0X2ltYWdlX2lkAAAAAQAAAAAAAAAHZ2FtZV9pZAAAAAAEAAAAAQAAA+gAAAPuAAAAIA==",
         "AAAAAAAAAAAAAAAMcm90YXRlX2FkbWluAAAAAQAAAAAAAAAJbmV3X2FkbWluAAAAAAAAEwAAAAEAAAPpAAAAAgAAAAM=",
         "AAAAAAAAAAAAAAAMc2V0X2ltYWdlX2lkAAAAAgAAAAAAAAAHZ2FtZV9pZAAAAAAEAAAAAAAAAAxuZXdfaW1hZ2VfaWQAAAPuAAAAIAAAAAEAAAPpAAAAAgAAAAM=",
-        "AAAAAAAAAbZWZXJpZnkgYSBSSVNDIFplcm8gcHJvb2YgYW5kIGNvbmRpdGlvbmFsbHkgdXBkYXRlIHRoZSBjb21taXR0ZWQKcGxheWVyJ3MgcGVyc29uYWwgYmVzdC4gTm8gYXV0aCByZXF1aXJlZDogdGhlIHByb29mIGJpbmRzIHRoZQpzY29yZSB0byBhIHNwZWNpZmljIDMyLWJ5dGUgcHVia2V5LCBhbmQgdGhlIHNjb3JlIGlzIGFsd2F5cwpjcmVkaXRlZCB0aGVyZS4gQW55b25lIChwbGF5ZXIsIHJlbGF5LCBmcmllbmQpIGNhbiBwYXkgdGhlIGdhcy4KClBCIHVwZGF0ZXMgb25seSB3aGVuIGAoc2NvcmUsIHRpY2tzX3N1cnZpdmVkKWAgc3RyaWN0bHkgZXhjZWVkcwp0aGUgZXhpc3RpbmcgZW50cnkgKHRpZXMgYnJva2VuIGJ5IHRpY2tzKS4gTG93ZXIgc2NvcmVzIGFyZQpyZWplY3RlZCB3aXRoIG5vIHN0YXRlIGNoYW5nZSDigJQgc2F2ZXMgZ2FzIHZzLiBhbHdheXMgd3JpdGluZy4AAAAAAAxzdWJtaXRfc2NvcmUAAAADAAAAAAAAAAdnYW1lX2lkAAAAAAQAAAAAAAAABHNlYWwAAAAOAAAAAAAAAAdqb3VybmFsAAAAAA4AAAABAAAD6QAAAAIAAAAD",
-        "AAAAAQAAAAAAAAAAAAAADkhpZ2hTY29yZUVudHJ5AAAAAAAEAAAAAAAAAAVzY29yZQAAAAAAAAQAAACoMzItYml0IHNlZWQgdGhlIHBsYXllciByYW4gdGhlIHNpbSB3aXRoLiBTdG9yZWQgZm9yIHJlcHJvZHVjaWJpbGl0eQooYW55b25lIGNhbiByZXBsYXkgdGhlIHJ1biBieSBxdWVyeWluZyB0aGlzIHNlZWQgKyB0aGUgb2ZmLWNoYWluCnRyYW5zY3JpcHQpLiBOT1QgdmVyaWZpZWQgb24tY2hhaW4uAAAABHNlZWQAAAAEAAAAH0xlZGdlciB0aW1lc3RhbXAgYXQgc2V0dGxlbWVudC4AAAAACnNldHRsZWRfYXQAAAAAAAYAAAAAAAAADnRpY2tzX3N1cnZpdmVkAAAAAAAE" ]),
+        "AAAAAAAAAqhWZXJpZnkgYSBSSVNDIFplcm8gcHJvb2YgYW5kIGNvbmRpdGlvbmFsbHkgdXBkYXRlIHRoZSBjb21taXR0ZWQKcGxheWVyJ3MgcGVyc29uYWwgYmVzdC4gTm8gYXV0aCByZXF1aXJlZDogdGhlIHByb29mIGJpbmRzIHRoZQpzY29yZSB0byBhIHNwZWNpZmljIDMyLWJ5dGUgcHVia2V5LCBhbmQgdGhlIHNjb3JlIGlzIGFsd2F5cwpjcmVkaXRlZCB0aGVyZS4gQW55b25lIChwbGF5ZXIsIHJlbGF5LCBmcmllbmQpIGNhbiBwYXkgdGhlIGdhcy4KClBCIHVwZGF0ZXMgb25seSB3aGVuIGAoc2NvcmUsIHRpY2tzX3N1cnZpdmVkKWAgc3RyaWN0bHkgZXhjZWVkcwp0aGUgZXhpc3RpbmcgZW50cnkgKHRpZXMgYnJva2VuIGJ5IHRpY2tzKS4gTG93ZXIgc2NvcmVzIGFyZQpzaWxlbnRseSBrZXB0LW91dCBhbmQgc2F2ZSB0aGUgc3RvcmFnZSB3cml0ZS4KCkVudW1lcmF0aW9uOiBvbiBhIHBsYXllcidzIGZpcnN0IGV2ZXIgc3VibWlzc2lvbiBmb3IgdGhpcyBnYW1lLAp0aGV5J3JlIGFkZGVkIHRvIHRoZSBpbmRleGVkIGBQbGF5ZXJCeUluZGV4YCB0YWJsZSDigJQgdW5sZXNzIHRoYXQKdGFibGUgaXMgYWxyZWFkeSBhdCBgTUFYX1BMQVlFUlNfUEVSX0dBTUVgLCBpbiB3aGljaCBjYXNlIHRoZQplbnVtZXJhdGlvbiBpcyAqKnNpbGVudGx5IHNraXBwZWQqKiAoSGlnaFNjb3JlIGlzIHN0aWxsIHdyaXR0ZW4pLgAAAAxzdWJtaXRfc2NvcmUAAAADAAAAAAAAAAdnYW1lX2lkAAAAAAQAAAAAAAAABHNlYWwAAAAOAAAAAAAAAAdqb3VybmFsAAAAAA4AAAABAAAD6QAAAAIAAAAD",
+        "AAAAAAAAAAAAAAANZ2V0X3BsYXllcl9hdAAAAAAAAAIAAAAAAAAAB2dhbWVfaWQAAAAABAAAAAAAAAADaWR4AAAAAAQAAAABAAAD6AAAA+4AAAAg",
+        "AAAAAQAAAAAAAAAAAAAADkhpZ2hTY29yZUVudHJ5AAAAAAAEAAAAAAAAAAVzY29yZQAAAAAAAAQAAACoMzItYml0IHNlZWQgdGhlIHBsYXllciByYW4gdGhlIHNpbSB3aXRoLiBTdG9yZWQgZm9yIHJlcHJvZHVjaWJpbGl0eQooYW55b25lIGNhbiByZXBsYXkgdGhlIHJ1biBieSBxdWVyeWluZyB0aGlzIHNlZWQgKyB0aGUgb2ZmLWNoYWluCnRyYW5zY3JpcHQpLiBOT1QgdmVyaWZpZWQgb24tY2hhaW4uAAAABHNlZWQAAAAEAAAAH0xlZGdlciB0aW1lc3RhbXAgYXQgc2V0dGxlbWVudC4AAAAACnNldHRsZWRfYXQAAAAAAAYAAAAAAAAADnRpY2tzX3N1cnZpdmVkAAAAAAAE",
+        "AAAAAAAAAAAAAAAQZ2V0X3BsYXllcl9jb3VudAAAAAEAAAAAAAAAB2dhbWVfaWQAAAAABAAAAAEAAAAE",
+        "AAAAAAAAANtCYXRjaGVkIHJlYWQgZm9yIGluZGV4ZXIgcGFnaW5hdGlvbiDigJQgcmV0dXJucyBwbGF5ZXJzIGluCmBbc3RhcnQsIGVuZClgIGluZGV4IHJhbmdlLCBjYXBwZWQgYXQgYE1BWF9QQUdFX1NJWkVgIGVudHJpZXMKdG8gYm91bmQgdGhlIHR4J3MgcmVhZC1lbnRyeSBidWRnZXQuIEVuZC1vZi10YWJsZSBpcyBzaWduYWxsZWQKYnkgYSBzaG9ydGVyLXRoYW4tcmVxdWVzdGVkIHJldHVybi4AAAAAEGdldF9wbGF5ZXJzX3BhZ2UAAAADAAAAAAAAAAdnYW1lX2lkAAAAAAQAAAAAAAAABXN0YXJ0AAAAAAAABAAAAAAAAAADZW5kAAAAAAQAAAABAAAD6gAAA+4AAAAg" ]),
       options
     )
   }
   public readonly fromJSON = {
     add_game: this.txFromJSON<Result<void>>,
-        get_game: this.txFromJSON<Option<GameMeta>>,
         get_score: this.txFromJSON<Option<HighScoreEntry>>,
         initialize: this.txFromJSON<Result<void>>,
-        set_paused: this.txFromJSON<Result<void>>,
+        get_image_id: this.txFromJSON<Option<Buffer>>,
         rotate_admin: this.txFromJSON<Result<void>>,
         set_image_id: this.txFromJSON<Result<void>>,
-        submit_score: this.txFromJSON<Result<void>>
+        submit_score: this.txFromJSON<Result<void>>,
+        get_player_at: this.txFromJSON<Option<Buffer>>,
+        get_player_count: this.txFromJSON<u32>,
+        get_players_page: this.txFromJSON<Array<Buffer>>
   }
 }
