@@ -64,7 +64,7 @@ pub static STAGE_TABLE: &[StageParams] = &[
         pillars_enabled: false,
         pillar_spawn_period: 0,
         pillar_gap: 0,
-        scroll_speed: fp(2.0),
+        scroll_speed: fp(2.5),
         fuel_enabled: false,
         fuel_drain_per_tick: 0,
         fuel_spawn_period: 0,
@@ -79,11 +79,11 @@ pub static STAGE_TABLE: &[StageParams] = &[
     },
     // ---- Uncommon ----
     StageParams {
-        score_gate: 12,
+        score_gate: 15,
         pillars_enabled: false,
         pillar_spawn_period: 0,
         pillar_gap: 0,
-        scroll_speed: fp(2.1),
+        scroll_speed: fp(2.75),
         fuel_enabled: true,
         fuel_drain_per_tick: fp(0.04),
         fuel_spawn_period: fp(320.0),
@@ -98,17 +98,17 @@ pub static STAGE_TABLE: &[StageParams] = &[
     },
     // ---- Rare ----
     StageParams {
-        score_gate: 37,
+        score_gate: 46,
         pillars_enabled: true,
         pillar_spawn_period: fp(440.0),
         pillar_gap: 220,
-        scroll_speed: fp(2.3),
+        scroll_speed: fp(3.0),
         fuel_enabled: true,
         fuel_drain_per_tick: fp(0.05),
         fuel_spawn_period: fp(340.0),
         enemy_spawn_period: fp(220.0),
         enemy_mask: ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG | ENEMY_DRONE | ENEMY_BANNER_PLANE,
-        bird_taper: Some(BirdTaper { start_score: 37, end_score: 125 }),
+        bird_taper: Some(BirdTaper { start_score: 46, end_score: 156 }),
         bird_small_speed: fp(4.4),
         bird_big_speed: fp(2.6),
         missile_tier_mask: MISSILE_COMMON,
@@ -117,11 +117,11 @@ pub static STAGE_TABLE: &[StageParams] = &[
     },
     // ---- Legendary ----
     StageParams {
-        score_gate: 125,
+        score_gate: 156,
         pillars_enabled: true,
         pillar_spawn_period: fp(380.0),
         pillar_gap: 200,
-        scroll_speed: fp(2.5),
+        scroll_speed: fp(3.25),
         fuel_enabled: true,
         fuel_drain_per_tick: fp(0.06),
         fuel_spawn_period: fp(450.0),
@@ -136,11 +136,11 @@ pub static STAGE_TABLE: &[StageParams] = &[
     },
     // ---- Mythical ----
     StageParams {
-        score_gate: 300,
+        score_gate: 375,
         pillars_enabled: true,
         pillar_spawn_period: fp(320.0),
         pillar_gap: 180,
-        scroll_speed: fp(2.7),
+        scroll_speed: fp(3.5),
         fuel_enabled: true,
         fuel_drain_per_tick: fp(0.07),
         fuel_spawn_period: fp(700.0),
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn score_gates_match_ts() {
         let gates: Vec<u32> = STAGE_TABLE.iter().map(|s| s.score_gate).collect();
-        assert_eq!(gates, vec![0, 12, 37, 125, 300]);
+        assert_eq!(gates, vec![0, 15, 46, 156, 375]);
     }
 
     /// fp() values for the spawn-period / drain / bird-speed columns —
@@ -226,22 +226,22 @@ mod tests {
     #[test]
     fn stage_for_score_thresholds() {
         assert_eq!(stage_for_score(0), Stage::Common);
-        assert_eq!(stage_for_score(11), Stage::Common);
-        assert_eq!(stage_for_score(12), Stage::Uncommon);
-        assert_eq!(stage_for_score(36), Stage::Uncommon);
-        assert_eq!(stage_for_score(37), Stage::Rare);
-        assert_eq!(stage_for_score(124), Stage::Rare);
-        assert_eq!(stage_for_score(125), Stage::Legendary);
-        assert_eq!(stage_for_score(299), Stage::Legendary);
-        assert_eq!(stage_for_score(300), Stage::Mythical);
+        assert_eq!(stage_for_score(14), Stage::Common);
+        assert_eq!(stage_for_score(15), Stage::Uncommon);
+        assert_eq!(stage_for_score(45), Stage::Uncommon);
+        assert_eq!(stage_for_score(46), Stage::Rare);
+        assert_eq!(stage_for_score(155), Stage::Rare);
+        assert_eq!(stage_for_score(156), Stage::Legendary);
+        assert_eq!(stage_for_score(374), Stage::Legendary);
+        assert_eq!(stage_for_score(375), Stage::Mythical);
         assert_eq!(stage_for_score(10_000), Stage::Mythical);
     }
 
     #[test]
     fn rare_has_bird_taper() {
         let taper = STAGE_TABLE[2].bird_taper.expect("Rare must have a bird taper");
-        assert_eq!(taper.start_score, 37);
-        assert_eq!(taper.end_score, 125);
+        assert_eq!(taper.start_score, 46);
+        assert_eq!(taper.end_score, 156);
         // Every other stage has None.
         for i in [0, 1, 3, 4] {
             assert!(STAGE_TABLE[i].bird_taper.is_none(), "stage {i} should not taper");
