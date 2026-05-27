@@ -1,6 +1,6 @@
 # Progress
 
-**Current phase:** Phase 8 — Leaderboard indexer (not started). Phase 7 done (rewards-sync messaging + overlay layout polish). Phase 6 done locally (relay + worker queue green end-to-end on testnet, browser-driven smoke pending). Phase 5 done locally and on testnet (deploy + on-chain submit_score smoke green).
+**Current phase:** Phase 9 — Social sharing (not started). Phase 8 done (minimum-viable game_hub redeploy + on-chain enumeration up to 1500 + indexer cron writing public/leaderboard/<slug>.json + top-N table on /birdstrike/leaderboard). Phase 7 done (rewards-sync messaging + overlay layout polish). Phase 6 done locally (relay + worker queue green end-to-end on testnet, browser-driven smoke pending). Phase 5 done locally and on testnet.
 
 For what each phase is, see [`spec/phases.md`](spec/phases.md).
 For commit-level history, see `git log`.
@@ -15,7 +15,7 @@ For commit-level history, see `git log`.
 | 5 — Soroban contract + wallet | done locally + deployed to testnet (game_hub `CCDQ…JQ3CTT`; on-chain submit_score smoke green) |
 | 6 — Relay + worker queue | done locally (Bun relay + bash worker + auto-settle via stellar-sdk; end-to-end smoke green: POST transcript → claim → result → on-chain submit_score → tx_hash in DB) |
 | 7 — Rewards-sync messaging | done (cyan `RewardsCallout` on Birdstrike card + `/birdstrike/leaderboard`; pre-flight REWARD line "Sentinel points sync to your address"; overlay layouts tightened) |
-| 8 — Leaderboard indexer | not started |
+| 8 — Leaderboard indexer | done (game_hub redeployed at `CALP…U2N6YO` with on-chain player enumeration up to 1500 silent-skip; `scripts/index-leaderboard.ts` writes `public/leaderboard/<slug>.json`; top-N table renders on `/birdstrike/leaderboard`) |
 | 9 — Social sharing | not started (needs Phase 8) |
 | 10 — Production deploy (Fly.io) | not started |
 | 11 — Proof pipeline visualization | not started (gated on Phase 10) |
