@@ -51,6 +51,30 @@
         }
       ]
     ],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+              "function_name": "add_game",
+              "args": [
+                {
+                  "u32": 2
+                },
+                {
+                  "bytes": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
+    [],
+    [],
     [],
     [],
     []
@@ -75,6 +99,26 @@
               "key": {
                 "ledger_key_nonce": {
                   "nonce": "801925984706572462"
+                }
+              },
+              "durability": "temporary",
+              "val": "void"
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 6311999
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "key": {
+                "ledger_key_nonce": {
+                  "nonce": "1033654523790656264"
                 }
               },
               "durability": "temporary",
@@ -144,7 +188,7 @@
                     "u32": 1
                   },
                   {
-                    "bytes": "4444444444444444444444444444444444444444444444444444444444444444"
+                    "bytes": "1111111111111111111111111111111111111111111111111111111111111111"
                   }
                 ]
               },
@@ -156,7 +200,7 @@
                       "symbol": "score"
                     },
                     "val": {
-                      "u32": 500
+                      "u32": 100
                     }
                   },
                   {
@@ -164,7 +208,7 @@
                       "symbol": "seed"
                     },
                     "val": {
-                      "u32": 2
+                      "u32": 1
                     }
                   },
                   {
@@ -180,7 +224,7 @@
                       "symbol": "ticks_survived"
                     },
                     "val": {
-                      "u32": 1500
+                      "u32": 100
                     }
                   }
                 ]
@@ -228,6 +272,33 @@
               "key": {
                 "vec": [
                   {
+                    "symbol": "ImageId"
+                  },
+                  {
+                    "u32": 2
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "bytes": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 4095
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+              "key": {
+                "vec": [
+                  {
                     "symbol": "PlayerByIndex"
                   },
                   {
@@ -240,7 +311,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "4444444444444444444444444444444444444444444444444444444444444444"
+                "bytes": "1111111111111111111111111111111111111111111111111111111111111111"
               }
             }
           },
@@ -291,7 +362,7 @@
                     "u32": 1
                   },
                   {
-                    "bytes": "4444444444444444444444444444444444444444444444444444444444444444"
+                    "bytes": "1111111111111111111111111111111111111111111111111111111111111111"
                   }
                 ]
               },
