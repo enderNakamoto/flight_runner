@@ -6,9 +6,16 @@
     "dev": "pnpm --filter @flight/web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "test:parity": "npx -y tsx packages/sim/scripts/run-corpus.ts && npx -y tsx packages/sim/scripts/dump-hashes.ts && cargo test -p flight_scroll_core --test corpus_parity"
+    "test:parity": "npx -y tsx packages/sim/scripts/run-corpus.ts && npx -y tsx packages/sim/scripts/dump-hashes.ts && cargo test -p flight_scroll_core --test corpus_parity",
+    "index:leaderboard": "tsx scripts/index-leaderboard.ts",
+    "index:leaderboard:watch": "while true; do pnpm index:leaderboard; sleep 300; done"
+  },
+  "dependencies": {
+    "@flight/game-hub-client": "workspace:*",
+    "@stellar/stellar-sdk": "^14.1.1"
   },
   "devDependencies": {
+    "tsx": "^4.19.0",
     "typescript": "~5.5.4"
   },
   "packageManager": "pnpm@9.7.0"

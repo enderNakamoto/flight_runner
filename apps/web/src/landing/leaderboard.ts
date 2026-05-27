@@ -152,6 +152,70 @@ const STYLE = `
   #fs-lb .result .big     { font-size: 22px; font-family: var(--font-pixel); }
   #fs-lb .result.err      { border-color: #6b2a2a; color: #ff9090; }
   #fs-lb .result.empty    { color: var(--muted); font-style: italic; }
+
+  /* Top-N table. Each row is a flexbox of rank · address · score · ticks.
+     The "you" row gets the accent border so the player's eye lands on it. */
+  #fs-lb .topn {
+    background: var(--bg-card);
+    border: 3px solid var(--border);
+    padding: 0;
+    overflow: hidden;
+  }
+  #fs-lb .topn .row {
+    display: grid;
+    grid-template-columns: 48px 1fr auto auto;
+    gap: 16px;
+    padding: 10px 16px;
+    align-items: center;
+    font-size: 13px;
+    border-bottom: 1px solid rgba(58, 74, 107, 0.6);
+  }
+  #fs-lb .topn .row:last-child { border-bottom: none; }
+  #fs-lb .topn .row.header {
+    background: rgba(58, 74, 107, 0.35);
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  #fs-lb .topn .row .rank {
+    font-family: var(--font-pixel);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  #fs-lb .topn .row.gold .rank { color: var(--accent); }
+  #fs-lb .topn .row.silver .rank { color: #cfd8dc; }
+  #fs-lb .topn .row.bronze .rank { color: #b48a00; }
+  #fs-lb .topn .row .addr {
+    color: #d8e0f0;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #fs-lb .topn .row .score {
+    font-family: var(--font-pixel);
+    font-size: 14px;
+    color: var(--accent);
+    min-width: 60px;
+    text-align: right;
+  }
+  #fs-lb .topn .row .ticks {
+    color: var(--muted);
+    font-size: 11px;
+    min-width: 80px;
+    text-align: right;
+  }
+  #fs-lb .topn .row.you {
+    background: rgba(245, 208, 75, 0.08);
+    border-left: 3px solid var(--accent);
+  }
+  #fs-lb .topn .row.you .addr { color: var(--accent); }
+  #fs-lb .topn-meta {
+    color: var(--muted);
+    font-size: 11px;
+    margin: 8px 0 18px;
+    text-align: right;
+  }
 `;
 
 function injectStyle(): void {
@@ -229,14 +293,25 @@ export function mountGameLeaderboard(game: GameEntry): void {
       <h1>${game.title}<br>LEADERBOARD</h1>
       ${rewardsCalloutHtml()}
       <h2>Top scores</h2>
-      <div class="result empty">Top scores coming soon.</div>
+      <div id="fs-lb-topn"></div>
+      <div class="topn-meta" id="fs-lb-topn-meta"></div>
       <h2>Your best</h2>
       <div class="you" id="fs-lb-you"></div>
     </div>
   `;
   document.body.appendChild(root);
 
+  const topnEl = root.querySelector<HTMLDivElement>("#fs-lb-topn")!;
+  const topnMetaEl = root.querySelector<HTMLDivElement>("#fs-lb-topn-meta")!;
   const youEl = root.querySelector<HTMLDivElement>("#fs-lb-you")!;
+
+  // ── Top-N: fetched from the static JSON the indexer cron writes. ──
+  void renderTopN(game.slug, topnEl, topnMetaEl, getAddress());
+
+  // Re-highlight the "you" row when the wallet connects/disconnects.
+  onWalletChange((addr) => {
+    void renderTopN(game.slug, topnEl, topnMetaEl, addr);
+  });
 
   function renderConnect() {
     youEl.innerHTML = `
@@ -328,4 +403,96 @@ export function mountGameLeaderboard(game: GameEntry): void {
 
 function fmtAddress(a: string): string {
   return a.length <= 14 ? a : `${a.slice(0, 8)}…${a.slice(-6)}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Top-N snapshot — mirrors scripts/index-leaderboard.ts output shape.
+// ─────────────────────────────────────────────────────────────────────
+
+interface SnapshotEntry {
+  rank: number;
+  address: string;
+  pubkey_hex: string;
+  score: number;
+  ticks_survived: number;
+  seed: number;
+  settled_at: number;
+}
+
+interface Snapshot {
+  game_id: number;
+  slug: string;
+  contract_id: string;
+  generated_at: string;
+  generated_at_unix: number;
+  player_count: number;
+  top_n: number;
+  entries: SnapshotEntry[];
+}
+
+function rankClass(rank: number): string {
+  if (rank === 1) return "gold";
+  if (rank === 2) return "silver";
+  if (rank === 3) return "bronze";
+  return "";
+}
+
+function renderTopNRows(snap: Snapshot, youAddr: string | null): string {
+  if (snap.entries.length === 0) {
+    return `<div class="result empty" style="padding: 18px;">No scores yet — be the first to submit.</div>`;
+  }
+  const header = `
+    <div class="row header">
+      <span class="rank">#</span>
+      <span class="addr">player</span>
+      <span class="score">score</span>
+      <span class="ticks">ticks</span>
+    </div>`;
+  const body = snap.entries
+    .map((e) => {
+      const youCls = youAddr && e.address === youAddr ? " you" : "";
+      const rankCls = rankClass(e.rank);
+      return `
+        <div class="row${youCls} ${rankCls}">
+          <span class="rank">#${e.rank}</span>
+          <span class="addr"><code>${fmtAddress(e.address)}</code></span>
+          <span class="score">${e.score}</span>
+          <span class="ticks">${e.ticks_survived}</span>
+        </div>`;
+    })
+    .join("");
+  return `<div class="topn">${header}${body}</div>`;
+}
+
+function renderTopNMeta(snap: Snapshot): string {
+  const stale = (Date.now() / 1000) - snap.generated_at_unix;
+  const minAgo = Math.max(0, Math.round(stale / 60));
+  const ago =
+    minAgo < 1 ? "just now" :
+    minAgo < 60 ? `${minAgo} min ago` :
+    `${Math.round(minAgo / 60)} h ago`;
+  return `${snap.player_count} players · snapshot taken ${ago}`;
+}
+
+async function renderTopN(
+  slug: string,
+  topnEl: HTMLElement,
+  metaEl: HTMLElement,
+  youAddr: string | null,
+): Promise<void> {
+  topnEl.innerHTML = `<div class="result empty" style="padding: 18px;">Loading top scores…</div>`;
+  metaEl.textContent = "";
+  try {
+    const res = await fetch(`/leaderboard/${slug}.json`, { cache: "no-cache" });
+    if (!res.ok) {
+      // 404 = indexer hasn't written a snapshot yet for this game.
+      topnEl.innerHTML = `<div class="result empty" style="padding: 18px;">Top scores coming soon.</div>`;
+      return;
+    }
+    const snap = (await res.json()) as Snapshot;
+    topnEl.innerHTML = renderTopNRows(snap, youAddr);
+    metaEl.textContent = renderTopNMeta(snap);
+  } catch (e) {
+    topnEl.innerHTML = `<div class="result err" style="padding: 18px;">Couldn't load top scores: ${e instanceof Error ? e.message : String(e)}</div>`;
+  }
 }
