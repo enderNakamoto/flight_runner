@@ -38,12 +38,19 @@ const STYLE = `
   }
   #fs-submit-btn {
     position: fixed;
-    left: 50%;
-    /* Sits above the in-canvas "R restart" hint (y ≈ window bottom −20)
-       and below the Sentinel sub-tagline (canvas y ≈ 480). 110px clears
-       the hint at typical 720p viewports without overlapping the body. */
+    /* Auto-margin centering — more bulletproof than translateX(-50%)
+       when the button has an emoji prefix (which shifts the visual /
+       layout-width relationship) or sub-pixel layout. left:0 + right:0
+       + margin:auto + fit-content forces the browser to center based on
+       the actual content box, no transform math involved. */
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+    width: fit-content;
+    /* Sits above the in-canvas "R to restart" hint and below the
+       Sentinel sub-tagline. 110px clears the hint at typical 720p
+       viewports without overlapping the body. */
     bottom: 110px;
-    transform: translateX(-50%);
     z-index: 90;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
     font-size: 18px;
@@ -52,6 +59,7 @@ const STYLE = `
     padding: 16px 32px;
     min-width: 280px;
     color: #fff;
+    text-align: center;
     border-radius: 10px;
     cursor: pointer;
     animation: fs-pulse 2.2s ease-in-out infinite;
@@ -61,15 +69,17 @@ const STYLE = `
   }
   #fs-submit-btn:hover {
     background: linear-gradient(135deg, #6d4ac0 0%, #3a72e8 100%);
-    transform: translateX(-50%) translateY(-1px);
+    transform: translateY(-1px);
   }
-  #fs-submit-btn:active { transform: translateX(-50%) translateY(0); }
+  #fs-submit-btn:active { transform: translateY(0); }
   /* Reassurance caption sitting directly below the button. */
   #fs-submit-caption {
     position: fixed;
-    left: 50%;
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+    width: fit-content;
     bottom: 80px;
-    transform: translateX(-50%);
     z-index: 89;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
     font-size: 11px;

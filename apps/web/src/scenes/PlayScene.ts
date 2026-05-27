@@ -704,6 +704,7 @@ export class PlayScene extends Phaser.Scene {
     this.interBg.setVisible(true);
     this.skipBtnBg.setVisible(true);
     this.skipBtnText.setVisible(true);
+    this.hintText.setVisible(false);
     this.startTyping(copy.body.join("\n"));
     // Drop input that may have been queued so we don't immediately skip if
     // SPACE was held during the transition.
@@ -728,6 +729,7 @@ export class PlayScene extends Phaser.Scene {
     this.interHint.setVisible(false);
     this.skipBtnBg.setVisible(false);
     this.skipBtnText.setVisible(false);
+    this.hintText.setVisible(true);
     this.bodyTypingDone = true;
     this.phase = "playing";
     this.accumulator = 0;
@@ -748,10 +750,13 @@ export class PlayScene extends Phaser.Scene {
     this.spSubTagline.setVisible(false);
     this.skipBtnBg.setVisible(true);
     this.skipBtnText.setVisible(true);
+    // Hide the game-world hint (`↑ / ↓ to steer`) — it sits at depth 10
+    // and bleeds through the 0.85-alpha overlay, looking like overflow.
+    this.hintText.setVisible(false);
     this.startTyping(INTRO_BODY.join("\n"));
     // Inline auth row appears below the typed body, snapping to whichever
     // sign-in state the player is in right now.
-    this.interAuthRow.setVisible(true);
+    this.interAuthRow.setY(500).setVisible(true);
     this.updateAuthRow(getAddress());
   }
 
@@ -781,6 +786,7 @@ export class PlayScene extends Phaser.Scene {
     this.interAuthRow.setVisible(false);
     this.skipBtnBg.setVisible(false);
     this.skipBtnText.setVisible(false);
+    this.hintText.setVisible(true);
     this.bodyTypingDone = true;
     this.phase = "ready";
   }
@@ -791,24 +797,35 @@ export class PlayScene extends Phaser.Scene {
     const copy = OUTROS[this.state.gameOverReason] ?? OUTROS[0];
     const isBest = this.state.score > 0 && this.state.score >= this.best;
 
-    // Move the existing intermission widgets to outro positions
+    // Outro layout (top → bottom, canvas y, WORLD_HEIGHT = 720):
+    //   ~50  spHeader      SENTINEL PROTOCOL // DELAY NOTIFICATION
+    //   ~72  spDivider
+    //   ~120 interTitle    FLIGHT DIVERTED
+    //   ~180 interBody     diversion reason copy (typewriter)
+    //   ~430 spTagline     DELAY WOULD HAVE BEEN COVERED
+    //   ~480 spSubTagline  "if you'd hedged your bets..."
+    //   ~530 interCountdown  SCORE x  BEST y  (moved up — was 670)
+    //   ~565 interHint       R restart        (moved up — was 700)
+    //   ~580–680 DOM submit button + caption sit here (bottom-anchored)
+    //   ~690 SKIP button (bottom-right corner)
+    // Keeping the canvas score/restart text ABOVE the DOM button area
+    // avoids the visual collision where bottom:110px DOM button used to
+    // overlap canvas y≈600–650 on 16:9 viewports.
     this.interTitle.setY(120);
     this.interBody.setY(180);
-    this.interCountdown.setY(WORLD_HEIGHT - 64);
-    this.interHint.setY(WORLD_HEIGHT - 30);
 
     this.interBg.setVisible(true);
     this.interTitle.setText(copy.title).setVisible(true);
     this.interBody.setVisible(true);
     this.interCountdown
-      .setY(WORLD_HEIGHT - 50)
+      .setY(530)
       .setText(isBest ? `NEW BEST  ${this.state.score}` : `SCORE ${this.state.score}    BEST ${this.best}`)
       .setColor(isBest ? "#ffd54f" : "#9be7ff")
       .setVisible(true);
     // T (download .bin transcript) is still bound as a dev shortcut but
     // intentionally not advertised — the relay handles proving end-to-end
     // now, players don't need to capture raw bin files.
-    this.interHint.setY(WORLD_HEIGHT - 20).setText("R restart").setVisible(true);
+    this.interHint.setY(565).setText("R to restart").setVisible(true);
 
     // Sentinel Protocol branded outro — header, big tagline, sub-tagline.
     // The single floating DOM button (apps/web/src/ui/submit-ui.ts) is the
@@ -822,6 +839,8 @@ export class PlayScene extends Phaser.Scene {
     // SKIP button — in outro it functions as "restart now"
     this.skipBtnBg.setVisible(true);
     this.skipBtnText.setVisible(true);
+    // Hide the in-world hint so it doesn't bleed through under the dark overlay.
+    this.hintText.setVisible(false);
     this.startTyping(copy.body.join("\n"));
   }
 
@@ -838,6 +857,7 @@ export class PlayScene extends Phaser.Scene {
     this.spSubTagline.setVisible(false);
     this.skipBtnBg.setVisible(false);
     this.skipBtnText.setVisible(false);
+    this.hintText.setVisible(true);
     this.bodyTypingDone = true;
   }
 

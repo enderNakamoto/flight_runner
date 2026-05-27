@@ -7,6 +7,7 @@ import { Client, type HighScoreEntry } from "@flight/game-hub-client";
 import { CONFIG, requireContractId } from "../chain/config.js";
 import { syncLocalBest } from "../chain/score-sync.js";
 import { connect, disconnect, getAddress, onWalletChange } from "../chain/wallet.js";
+import { rewardsCalloutHtml } from "../ui/rewards-callout.js";
 import { GAMES, type GameEntry } from "./games.js";
 
 function strkeyToPubkey(strkey: string): Buffer {
@@ -465,6 +466,7 @@ function makeCard(g: GameEntry): HTMLElement {
     <h2>${g.title}</h2>
     <div class="blurb">${g.blurb}</div>
     <div class="desc">${g.description}</div>
+    ${isLive ? rewardsCalloutHtml({ compact: true }) : ""}
     <div class="best" data-best style="display:none;"></div>
     <div class="actions">
       <a href="${playHref}" class="play"${isLive ? "" : ' onclick="event.preventDefault()"'}>

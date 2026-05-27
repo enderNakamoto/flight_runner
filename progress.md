@@ -1,6 +1,6 @@
 # Progress
 
-**Current phase:** Phase 7 — Boundless fallback + production deploy (not started). Phase 6 done locally (relay + worker queue green end-to-end on testnet, browser-driven smoke pending). Phase 5 done locally and on testnet (deploy + on-chain submit_score smoke green).
+**Current phase:** Phase 8 — Leaderboard indexer (not started). Phase 7 done (rewards-sync messaging + overlay layout polish). Phase 6 done locally (relay + worker queue green end-to-end on testnet, browser-driven smoke pending). Phase 5 done locally and on testnet (deploy + on-chain submit_score smoke green).
 
 For what each phase is, see [`spec/phases.md`](spec/phases.md).
 For commit-level history, see `git log`.
@@ -14,8 +14,12 @@ For commit-level history, see `git log`.
 | 4 — RISC Zero prover (local) | done locally (STARK + dev-mode green; Groth16 wrap deferred — needs Docker ≥16 GB RAM) |
 | 5 — Soroban contract + wallet | done locally + deployed to testnet (game_hub `CCDQ…JQ3CTT`; on-chain submit_score smoke green) |
 | 6 — Relay + worker queue | done locally (Bun relay + bash worker + auto-settle via stellar-sdk; end-to-end smoke green: POST transcript → claim → result → on-chain submit_score → tx_hash in DB) |
-| 7 — Boundless + production deploy | not started |
-| 8 — Polish + launch | not started |
+| 7 — Rewards-sync messaging | done (cyan `RewardsCallout` on Birdstrike card + `/birdstrike/leaderboard`; pre-flight REWARD line "Sentinel points sync to your address"; overlay layouts tightened) |
+| 8 — Leaderboard indexer | not started |
+| 9 — Social sharing | not started (needs Phase 8) |
+| 10 — Production deploy (Fly.io) | not started |
+| 11 — Proof pipeline visualization | not started (gated on Phase 10) |
+| 12 — Polish + launch | not started |
 
 ## How to use this file
 

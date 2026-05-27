@@ -12,6 +12,7 @@ import { Buffer } from "buffer";
 import { CONFIG, requireContractId } from "../chain/config.js";
 import { Client, type HighScoreEntry } from "@flight/game-hub-client";
 import { connect, getAddress, onWalletChange } from "../chain/wallet.js";
+import { rewardsCalloutHtml } from "../ui/rewards-callout.js";
 import { GAMES, type GameEntry } from "./games.js";
 
 const STYLE = `
@@ -226,6 +227,7 @@ export function mountGameLeaderboard(game: GameEntry): void {
     ${topnav(`<a href="/${game.slug}">▶ play this game</a>`)}
     <div class="inner">
       <h1>${game.title}<br>LEADERBOARD</h1>
+      ${rewardsCalloutHtml()}
       <h2>Top scores</h2>
       <div class="result empty">Top scores coming soon.</div>
       <h2>Your best</h2>

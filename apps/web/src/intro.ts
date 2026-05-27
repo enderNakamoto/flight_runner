@@ -12,7 +12,8 @@ export const INTRO_BODY: readonly string[] = [
   "",
   "MISSION:  Land in one piece.",
   "HAZARDS:  Birds. Drones. Jets. UFOs.",
-  "REWARD:   Every on-chain score earns Sentinel points.",
+  "REWARD:   Sentinel points sync to your address —",
+  "          sign in with the same wallet to keep them.",
   "          Top-10 scores earn more.",
 ];
 
