@@ -33,4 +33,12 @@ export const CONFIG = {
   /// the same second. GitHub Actions only needs ~one trigger per cron
   /// window anyway.
   refreshDebounceSeconds: Number(optional("REFRESH_DEBOUNCE_SECONDS", "20")),
+  /// 4-byte selector (hex, no 0x prefix) that the on-chain verifier
+  /// uses to identify which receipt format this seal belongs to.
+  /// Nethermind's stellar-risc0-verifier currently uses "73c457ba".
+  /// When set AND PROVE_MODE != "stub", the relay prepends this to
+  /// the Groth16 SNARK bytes that flight-host outputs, so the final
+  /// 260-byte seal starts with the selector the verifier expects.
+  /// Empty / unset = no prefix added (stub mode just outputs 260 zeros).
+  verifierSelectorHex: optional("VERIFIER_SELECTOR_HEX", ""),
 };

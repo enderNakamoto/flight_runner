@@ -224,6 +224,25 @@ impl GameHub {
         Ok(())
     }
 
+    /// Swap the verifier contract address. Used to cut over from
+    /// MockVerifier (testnet bringup, accepts anything) to the real
+    /// Nethermind stellar-risc0-verifier (production, does BN254
+    /// pairing checks). Affects every subsequent `submit_score` call;
+    /// already-stored HighScores are untouched.
+    pub fn set_verifier(env: Env, new_verifier: Address) -> Result<(), Error> {
+        let admin = require_admin(&env)?;
+        admin.require_auth();
+        let old: Option<Address> = env.storage().instance().get(&DataKey::Verifier);
+        env.storage().instance().set(&DataKey::Verifier, &new_verifier);
+        env.events()
+            .publish((symbol_short!("setverif"),), (old.unwrap_or(env.current_contract_address()), new_verifier));
+        Ok(())
+    }
+
+    pub fn get_verifier(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::Verifier)
+    }
+
     // ── Score submission (permissionless) ────────────────────────────────
 
     /// Verify a RISC Zero proof and conditionally update the committed

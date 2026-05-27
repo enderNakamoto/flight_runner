@@ -20,11 +20,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # rzup is RISC Zero's toolchain manager — installs the riscv32im-risc0-zkvm-elf
-# Rust target + cargo-risczero, both of which methods/build.rs calls into via
-# risc0-build::embed_methods() to produce FLIGHT_GUEST_ID + FLIGHT_GUEST_ELF.
+# Rust target + cargo-risczero (for methods/build.rs's embed_methods()), and
+# r0vm (the host VM runtime that drives Groth16 wrap in real prove mode).
+# If the wrap step fails at runtime with "missing stark2snark", that's the
+# signal to add `rzup install rapidsnark` here too.
 RUN curl -L https://risczero.com/install | bash
 ENV PATH="/root/.risc0/bin:${PATH}"
-RUN rzup install rust && rzup install cargo-risczero
+RUN rzup install rust \
+ && rzup install cargo-risczero \
+ && rzup install r0vm
 
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./

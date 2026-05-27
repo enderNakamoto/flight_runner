@@ -29,7 +29,8 @@ primary_region = 'iad'
     path = '/health'
 
 [[vm]]
-  # Free-tier compatible. Bump to performance-4x + memory=16gb when flipping
-  # PROVE_MODE → groth16 (requires a Fly payment method on file).
-  size = 'shared-cpu-1x'
-  memory = '1gb'
+  # Sized for real Groth16 wrap: the snark-wrap step needs ~16 GB RAM
+  # and benefits from dedicated CPUs (proof time drops nearly linearly).
+  # Cost is ~$0.10/hr while running, $0 idle (auto_stop_machines = stop).
+  size = 'performance-4x'
+  memory = '16gb'

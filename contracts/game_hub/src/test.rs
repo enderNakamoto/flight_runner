@@ -160,6 +160,25 @@ fn rotate_admin_rejects_before_initialize() {
     assert_eq!(err, Error::NotInitialized);
 }
 
+#[test]
+fn set_verifier_swaps_address() {
+    let (env, admin, verifier, client) = make_env();
+    client.initialize(&admin, &verifier);
+    assert_eq!(client.get_verifier().unwrap(), verifier);
+
+    let new_verifier = env.register(MockVerifier, ());
+    client.set_verifier(&new_verifier);
+    assert_eq!(client.get_verifier().unwrap(), new_verifier);
+}
+
+#[test]
+fn set_verifier_rejects_before_initialize() {
+    let (env, _admin, _verifier, client) = make_env();
+    let stray = Address::generate(&env);
+    let err = client.try_set_verifier(&stray).unwrap_err().unwrap();
+    assert_eq!(err, Error::NotInitialized);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // submit_score — happy path
 // ─────────────────────────────────────────────────────────────────────────────

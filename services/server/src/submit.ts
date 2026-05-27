@@ -114,12 +114,31 @@ export async function handleProve(req: Request): Promise<Response> {
       return jsonError(500, "flight-host output missing seal/journal");
     }
 
+    // Real-Groth16 mode: prepend the on-chain verifier's selector to
+    // the bare SNARK so the resulting 260-byte seal carries the right
+    // version tag. Stub mode keeps its 260 zero bytes — MockVerifier
+    // doesn't selector-check anyway.
+    let sealHex = artifacts.seal;
+    if (CONFIG.proveMode !== "stub" && CONFIG.verifierSelectorHex) {
+      const sel = CONFIG.verifierSelectorHex.replace(/^0x/, "").toLowerCase();
+      if (sel.length !== 8) {
+        return jsonError(500, "VERIFIER_SELECTOR_HEX must be 4 bytes (8 hex chars)");
+      }
+      // flight-host's groth16 output is the 256-byte Groth16 proof.
+      // Strip a leading selector if it's already present (256 vs 260),
+      // then prepend the one matching our deployed verifier.
+      if (sealHex.length === 520) {
+        sealHex = sealHex.slice(8);
+      }
+      sealHex = sel + sealHex;
+    }
+
     console.log(
-      `[relay] ✅ proved score=${artifacts.output?.score ?? "?"} for ${player_strkey}`,
+      `[relay] ✅ proved score=${artifacts.output?.score ?? "?"} for ${player_strkey} (seal ${sealHex.length / 2} bytes)`,
     );
     return Response.json({
       ok: true,
-      seal_hex: artifacts.seal,
+      seal_hex: sealHex,
       journal_hex: artifacts.journal,
       score: artifacts.output?.score,
       ticks_survived: artifacts.output?.ticks_survived,
