@@ -13,7 +13,9 @@ name: leaderboard · refresh snapshot
 
 on:
   schedule:
-    - cron: '0 * * * *'  # hourly, top of hour (UTC)
+    - cron: '*/5 * * * *'  # every 5 minutes (UTC) — GitHub's minimum cadence.
+                           # Commit step only runs when the JSON actually
+                           # changes, so quiet hours don't redeploy Vercel.
   workflow_dispatch:
 
 permissions:
