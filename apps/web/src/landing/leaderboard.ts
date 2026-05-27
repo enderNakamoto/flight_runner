@@ -308,41 +308,61 @@ export function mountGameLeaderboard(game: GameEntry): void {
   const youEl = root.querySelector<HTMLDivElement>("#fs-lb-you")!;
 
   // Two async sources feed this page:
-  //   - the JSON snapshot (top-N + per-row rank)
-  //   - on-chain `get_score` for the connected wallet
+  //   - the JSON snapshot (top-N + per-row rank) — refreshes every ~5 min via cron
+  //   - on-chain `get_score` for the connected wallet — live
   // We cache both as they land so:
-  //   1. the "Your best" tile can show the player's rank even if get_score
-  //      resolved first (re-render once snapshot lands), and
-  //   2. the celebration UI only fires once BOTH pieces are in (so we
-  //      don't toast "not in top-N" when the snapshot is just slow).
-  let snapshot: Snapshot | null = null;
-  let lastEntry: HighScoreEntry | null = null;
+  //   1. the "Your best" tile shows the player's live score (always current)
+  //   2. the top-N table is **optimistically merged** with the player's live
+  //      score so a fresh submission shows up immediately, before the next
+  //      cron snapshot lands
+  //   3. the celebration UI only fires once BOTH pieces are in (so we
+  //      don't toast "not in top-N" when the snapshot is just slow)
+  let snapshot: Snapshot | null = null;          // raw fetched JSON
+  let lastEntry: HighScoreEntry | null = null;   // player's live PB
   let lastAddr: string | null = null;
   let celebrationFired = false;
 
   // ── Top-N: fetched from the static JSON the indexer cron writes. ──
-  void renderTopN(game.slug, topnEl, topnMetaEl, getAddress()).then((s) => {
+  void renderTopN(game.slug, topnEl, topnMetaEl).then((s) => {
     snapshot = s;
-    // If get_score resolved first, re-render so the rank line + share
-    // buttons reflect the freshly-arrived snapshot.
+    paintTopN();
+    // If get_score resolved first, re-render the "your best" tile so the
+    // rank line + share buttons reflect the freshly-arrived snapshot.
     if (lastEntry && lastAddr) renderScore(lastAddr, lastEntry);
     tryFireCelebration();
   });
 
-  // Re-highlight the "you" row when the wallet connects/disconnects.
+  // Re-fetch + re-merge when the wallet connects / disconnects.
   onWalletChange((addr) => {
-    void renderTopN(game.slug, topnEl, topnMetaEl, addr).then((s) => {
+    void renderTopN(game.slug, topnEl, topnMetaEl).then((s) => {
       snapshot = s;
+      paintTopN();
       if (lastEntry && lastAddr) renderScore(lastAddr, lastEntry);
       tryFireCelebration();
     });
   });
 
-  // Look the player's address up in the cached snapshot and return their
-  // rank if present, or null if they're not in the top-N (or no snapshot yet).
+  // Render the top-N from the cached snapshot, optimistically merging in
+  // the player's live get_score result if it's better than what the snapshot
+  // shows for them. Called whenever either data source updates.
+  function paintTopN(): void {
+    if (!snapshot) return;
+    const merged = (lastEntry && lastAddr)
+      ? mergeLiveIntoSnapshot(snapshot, lastAddr, lastEntry)
+      : { snap: snapshot, userIsOptimistic: false };
+    topnEl.innerHTML = renderTopNRows(merged.snap, lastAddr);
+    topnMetaEl.innerHTML = renderTopNMeta(merged.snap, merged.userIsOptimistic);
+  }
+
+  // Look the player's address up in whichever view of the data we'd display
+  // (i.e. the optimistically-merged one). Returns null if they're not in
+  // the top-N (or no snapshot yet).
   function rankFromSnapshot(addr: string): number | null {
     if (!snapshot) return null;
-    const hit = snapshot.entries.find((e) => e.address === addr);
+    const merged = lastEntry
+      ? mergeLiveIntoSnapshot(snapshot, addr, lastEntry).snap
+      : snapshot;
+    const hit = merged.entries.find((e) => e.address === addr);
     return hit ? hit.rank : null;
   }
 
@@ -428,6 +448,9 @@ export function mountGameLeaderboard(game: GameEntry): void {
       </div>
     `;
     bindShareButtons(youEl);
+    // The live score may bump us up in the top-N — repaint with the merge
+    // applied so the player doesn't have to wait for the next cron run.
+    paintTopN();
     tryFireCelebration();
   }
 
@@ -527,21 +550,79 @@ function renderTopNRows(snap: Snapshot, youAddr: string | null): string {
   return `<div class="topn">${header}${body}</div>`;
 }
 
-function renderTopNMeta(snap: Snapshot): string {
+function renderTopNMeta(snap: Snapshot, userIsOptimistic: boolean): string {
   const stale = (Date.now() / 1000) - snap.generated_at_unix;
   const minAgo = Math.max(0, Math.round(stale / 60));
   const ago =
     minAgo < 1 ? "just now" :
     minAgo < 60 ? `${minAgo} min ago` :
     `${Math.round(minAgo / 60)} h ago`;
-  return `${snap.player_count} players · snapshot taken ${ago}`;
+  const base = `${snap.player_count} players · snapshot taken ${ago}`;
+  return userIsOptimistic
+    ? `${base} <span style="color: #5dd3ff;">· your latest is shown ahead of the next refresh</span>`
+    : base;
 }
 
+/// Insert the connected player's live PB into a snapshot if it's better
+/// than what's already there (or if they're not in the snapshot at all),
+/// then re-sort + re-rank + cap at top_n. Returns the new view plus a
+/// flag for whether the merge actually changed anything (used to surface
+/// a "your latest is shown ahead of the cron" hint in the meta line).
+function mergeLiveIntoSnapshot(
+  snap: Snapshot,
+  addr: string,
+  entry: HighScoreEntry,
+): { snap: Snapshot; userIsOptimistic: boolean } {
+  const liveScore = entry.score;
+  const liveTicks = entry.ticks_survived;
+  const existingIdx = snap.entries.findIndex((e) => e.address === addr);
+  const existing = existingIdx >= 0 ? snap.entries[existingIdx]! : null;
+  const liveIsBetter =
+    !existing ||
+    liveScore > existing.score ||
+    (liveScore === existing.score && liveTicks > existing.ticks_survived);
+  if (!liveIsBetter) {
+    return { snap, userIsOptimistic: false };
+  }
+  const others = existingIdx >= 0
+    ? snap.entries.filter((_, i) => i !== existingIdx)
+    : snap.entries;
+  const userRow: SnapshotEntry = {
+    rank: 0, // re-assigned after sort below
+    address: addr,
+    pubkey_hex: existing?.pubkey_hex ?? "",
+    score: liveScore,
+    ticks_survived: liveTicks,
+    seed: entry.seed,
+    settled_at: Number(entry.settled_at),
+  };
+  const merged = [...others, userRow]
+    .sort((a, b) => {
+      if (a.score !== b.score) return b.score - a.score;
+      return a.ticks_survived - b.ticks_survived;
+    })
+    .slice(0, snap.top_n)
+    .map((e, i) => ({ ...e, rank: i + 1 }));
+  return {
+    snap: {
+      ...snap,
+      entries: merged,
+      // If the live submission introduces a brand-new pubkey, bump the
+      // public count for the meta line so it stays consistent with what
+      // we're showing.
+      player_count: existingIdx < 0 ? snap.player_count + 1 : snap.player_count,
+    },
+    userIsOptimistic: true,
+  };
+}
+
+/// Fetch the snapshot JSON. Painting (with optimistic merge) is handled
+/// separately by the caller's `paintTopN()` so we don't have to wire the
+/// player's wallet/score down into this fetch.
 async function renderTopN(
   slug: string,
   topnEl: HTMLElement,
   metaEl: HTMLElement,
-  youAddr: string | null,
 ): Promise<Snapshot | null> {
   topnEl.innerHTML = `<div class="result empty" style="padding: 18px;">Loading top scores…</div>`;
   metaEl.textContent = "";
@@ -552,10 +633,7 @@ async function renderTopN(
       topnEl.innerHTML = `<div class="result empty" style="padding: 18px;">Top scores coming soon.</div>`;
       return null;
     }
-    const snap = (await res.json()) as Snapshot;
-    topnEl.innerHTML = renderTopNRows(snap, youAddr);
-    metaEl.textContent = renderTopNMeta(snap);
-    return snap;
+    return (await res.json()) as Snapshot;
   } catch (e) {
     topnEl.innerHTML = `<div class="result err" style="padding: 18px;">Couldn't load top scores: ${e instanceof Error ? e.message : String(e)}</div>`;
     return null;
