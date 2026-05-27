@@ -30,6 +30,19 @@ import {
 } from "../chain/transcript-buffer.js";
 import { connect, getAddress } from "../chain/wallet.js";
 
+/// Fire-and-forget nudge to the relay so it triggers a GitHub
+/// repository_dispatch and the indexer cron runs immediately. Cuts the
+/// "snapshot updates" delay from 5 min to ~30 s for other viewers.
+function nudgeLeaderboardRefresh(player: string | null): void {
+  if (!CONFIG.relayUrl) return;
+  const url = `${CONFIG.relayUrl.replace(/\/$/, "")}/api/refresh-leaderboard`;
+  fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ player_strkey: player ?? undefined }),
+  }).catch(() => { /* cron is the safety net */ });
+}
+
 
 const STYLE = `
   @keyframes fs-pulse {
@@ -309,6 +322,11 @@ export function mountSubmitUI(): void {
         setStatus(`✅ Submitted. score=${p.score} ticks=${p.ticks_survived}`, "ok");
         hideButton();
         renderAction();
+        // Nudge the indexer cron via repository_dispatch so the JSON
+        // snapshot refreshes within ~30s instead of waiting for the
+        // next */5 cron tick. The optimistic merge already covers OUR
+        // view; this helps everyone else watching the leaderboard.
+        nudgeLeaderboardRefresh(getAddress());
       } catch (e) {
         const m = errMsg(e);
         // Soroban marks submit_score as read-only when the new score

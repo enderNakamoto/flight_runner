@@ -16,7 +16,10 @@ on:
     - cron: '*/5 * * * *'  # every 5 minutes (UTC) — GitHub's minimum cadence.
                            # Commit step only runs when the JSON actually
                            # changes, so quiet hours don't redeploy Vercel.
-  workflow_dispatch:
+  workflow_dispatch:        # manual trigger from the Actions tab
+  repository_dispatch:      # triggered by the relay after each submit_score —
+    types: [refresh-leaderboard]  #   gets the JSON fresh within ~30s of a real
+                                  #   on-chain settlement, not 5 min
 
 permissions:
   contents: write        # needed for the commit + push step below

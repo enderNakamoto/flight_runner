@@ -2,6 +2,7 @@
 // Pure prover; never touches Stellar.
 
 import { CONFIG } from "./config.ts";
+import { handleRefresh } from "./refresh.ts";
 import { handleProve } from "./submit.ts";
 
 const server = Bun.serve({
@@ -57,6 +58,9 @@ async function route(req: Request, path: string, method: string): Promise<Respon
   }
   if (path === "/api/prove" && method === "POST") {
     return handleProve(req);
+  }
+  if (path === "/api/refresh-leaderboard" && method === "POST") {
+    return handleRefresh(req);
   }
   return new Response("not found", { status: 404 });
 }

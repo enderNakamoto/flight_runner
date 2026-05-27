@@ -125,14 +125,47 @@ curl -I https://relay.proofarcade.xyz/health
 
 ## 4. GitHub Actions — leaderboard cron
 
-Nothing to set up — `.github/workflows/index-leaderboard.yml` runs
-hourly on `main` against the testnet contract. `permissions:
-contents: write` lets the default `GITHUB_TOKEN` commit the refreshed
-JSON back to the repo. Each commit triggers a Vercel deploy
-(within hobby-tier deploy limits).
+Nothing to set up to start — `.github/workflows/index-leaderboard.yml`
+runs `*/5 * * * *` (every 5 min) on `main` against the testnet
+contract. `permissions: contents: write` lets the default
+`GITHUB_TOKEN` commit the refreshed JSON back to the repo. Each
+commit triggers a Vercel deploy.
 
 To trigger a refresh on demand: GitHub → Actions tab →
 **leaderboard · refresh snapshot** → **Run workflow**.
+
+### Real-time refresh after a submission (optional but recommended)
+
+The workflow also accepts a `repository_dispatch` event with
+`event_type: refresh-leaderboard`. The relay sends one of these every
+time a player settles a score, so other viewers see the new entry in
+~30 s instead of waiting up to 5 min for the next cron tick.
+
+**One-time setup — create a fine-grained PAT:**
+
+1. Open https://github.com/settings/personal-access-tokens
+2. **Generate new token** → name `proofarcade-dispatch`
+3. **Resource owner**: your user, **Repository access**: only the arcade repo
+4. **Repository permissions** → **Actions** → **Read and write**
+5. Generate, copy the `github_pat_...` value
+6. Set on Fly:
+
+   ```bash
+   fly secrets set GITHUB_DISPATCH_TOKEN=github_pat_xxx --app proofarcade-relay
+   ```
+
+7. (Optional override if your repo isn't the default
+   `enderNakamoto/flight_runner`):
+
+   ```bash
+   fly secrets set GITHUB_REPO=your-owner/your-repo --app proofarcade-relay
+   ```
+
+The relay endpoint `POST /api/refresh-leaderboard` accepts a request,
+debounces successive calls within `REFRESH_DEBOUNCE_SECONDS` (default
+20 s), and POSTs the dispatch to GitHub. If `GITHUB_DISPATCH_TOKEN`
+isn't set, the endpoint returns 503 and the cron is the only refresh
+path — that's a fine fallback.
 
 ---
 

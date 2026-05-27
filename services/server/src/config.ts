@@ -20,4 +20,17 @@ export const CONFIG = {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean),
+  /// Fine-grained GitHub PAT with `Actions: write` scope on
+  /// enderNakamoto/flight_runner. Used to fire a repository_dispatch
+  /// event right after a player settles a score, so the indexer
+  /// workflow refreshes the JSON snapshot within ~30s instead of
+  /// waiting for the next 5-min cron. Empty = endpoint returns 503.
+  githubDispatchToken: optional("GITHUB_DISPATCH_TOKEN", ""),
+  /// Target repo for the dispatch event. owner/repo format.
+  githubRepo: optional("GITHUB_REPO", "enderNakamoto/flight_runner"),
+  /// Floor between successive dispatches from the same relay, in
+  /// seconds. Prevents firing 30 dispatches if 30 players settle in
+  /// the same second. GitHub Actions only needs ~one trigger per cron
+  /// window anyway.
+  refreshDebounceSeconds: Number(optional("REFRESH_DEBOUNCE_SECONDS", "20")),
 };
