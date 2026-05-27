@@ -1,0 +1,23 @@
+# Vercel deploys this repo's static frontend only. Skip everything else.
+target
+**/target
+node_modules
+**/node_modules
+.git
+.github
+.claude
+.deploy-state.*
+.deploy-keys.*
+services/prover
+services/server
+contracts
+packages/sim/tests/corpus
+spec
+docs
+DEPLOY.md
+*.md
+Dockerfile
+.dockerignore
+fly.toml
+.env.local
+*.env.local
