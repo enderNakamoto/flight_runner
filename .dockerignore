@@ -1,0 +1,23 @@
+# Keep the Docker build context small + fast.
+**/node_modules
+**/dist
+**/target
+**/test_snapshots
+**/*.log
+.git
+.github
+.claude
+.vscode
+.idea
+.deploy-keys.*
+.deploy-state.*
+*.env
+*.env.local
+apps/web
+packages/sim/tests/corpus
+public
+spec
+docs
+README.md
+DEPLOY.md
+*.md

@@ -1,7 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pnpm -r build",
-  "outputDirectory": "apps/web/dist",
+  "framework": null,
+  "buildCommand": "pnpm --filter @flight/game-hub-client build && pnpm --filter @flight/web build",
   "installCommand": "pnpm install --frozen-lockfile",
-  "framework": "vite"
+  "outputDirectory": "apps/web/dist",
+  "trailingSlash": false,
+  "rewrites": [
+    { "source": "/((?!.*\\.).*)", "destination": "/index.html" }
+  ]
 }

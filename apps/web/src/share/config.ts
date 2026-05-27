@@ -10,9 +10,11 @@ const env = import.meta.env as Record<string, string | undefined>;
 
 export const SHARE_CONFIG = {
   /// Twitter / X handle WITHOUT the leading "@". Used in shares + twitter:site meta.
+  /// Birdstrike on the arcade is a marketing surface for Sentinel — handle
+  /// stays @sentinel_fi while the host is proofarcade.xyz.
   twitterHandle: env.VITE_TWITTER_HANDLE ?? "sentinel_fi",
   /// Canonical site URL (no trailing slash). Used as the base for share links.
-  productionUrl: (env.VITE_PRODUCTION_URL ?? "https://sentinel.xyz").replace(/\/$/, ""),
+  productionUrl: (env.VITE_PRODUCTION_URL ?? "https://proofarcade.xyz").replace(/\/$/, ""),
   /// Path or URL to the OG image. Relative paths resolve against productionUrl in shares.
   ogImagePath: env.VITE_OG_IMAGE_URL ?? "/og/birdstrike.png",
 } as const;

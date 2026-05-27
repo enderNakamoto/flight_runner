@@ -13,4 +13,11 @@ export const CONFIG = {
   /// uses MockVerifier). Set to "stub" for end-to-end testnet smoke
   /// without needing Docker+Groth16.
   proveMode: optional("PROVE_MODE", "groth16") as "groth16" | "stark" | "stub",
+  /// Comma-separated list of allowed CORS origins, or "*" for any.
+  /// Production: "https://proofarcade.xyz". Default "*" so local dev
+  /// against the relay just works.
+  corsOrigins: optional("CORS_ORIGIN", "*")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
 };

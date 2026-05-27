@@ -12,9 +12,10 @@ const server = Bun.serve({
     const url = new URL(req.url);
     const path = url.pathname;
     const method = req.method;
+    const origin = req.headers.get("origin");
 
     if (method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders() });
+      return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
 
     let res: Response;
@@ -25,17 +26,29 @@ const server = Bun.serve({
       console.error("[relay] handler threw:", m);
       res = Response.json({ ok: false, error: m }, { status: 500 });
     }
-    for (const [k, v] of Object.entries(corsHeaders())) res.headers.set(k, v);
+    for (const [k, v] of Object.entries(corsHeaders(origin))) res.headers.set(k, v);
     return res;
   },
 });
 
-function corsHeaders(): Record<string, string> {
-  return {
-    "access-control-allow-origin": "*",
+/// Build CORS headers. If CORS_ORIGIN env is "*", reflect any origin (or
+/// "*" when none was sent). Otherwise echo the request's origin only if
+/// it's in the allowlist — silently omit the header on a mismatch so the
+/// browser blocks the request without us advertising the allowlist.
+function corsHeaders(reqOrigin: string | null): Record<string, string> {
+  const base = {
     "access-control-allow-methods": "GET, POST, OPTIONS",
     "access-control-allow-headers": "content-type",
+    "vary": "origin",
   };
+  const allow = CONFIG.corsOrigins;
+  if (allow.length === 1 && allow[0] === "*") {
+    return { ...base, "access-control-allow-origin": reqOrigin ?? "*" };
+  }
+  if (reqOrigin && allow.includes(reqOrigin)) {
+    return { ...base, "access-control-allow-origin": reqOrigin };
+  }
+  return base; // no allow-origin → browser blocks
 }
 
 async function route(req: Request, path: string, method: string): Promise<Response> {

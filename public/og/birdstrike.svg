@@ -74,7 +74,7 @@
   <!-- proofworks tag bottom-left -->
   <g transform="translate(80, 560)">
     <text font-size="20" fill="#5dd3ff" letter-spacing="3" font-weight="700">PROOFWORKS  ARCADE</text>
-    <text x="0" y="28" font-size="14" fill="#94a3c6" letter-spacing="1">sentinel.xyz/birdstrike</text>
+    <text x="0" y="28" font-size="14" fill="#94a3c6" letter-spacing="1">proofarcade.xyz/birdstrike</text>
   </g>
 
   <!-- pixel-art frame border -->

@@ -1,0 +1,68 @@
+# Hourly leaderboard snapshot. Pulls every player's PB off the game_hub
+# contract via the indexer script and commits the refreshed JSON if it
+# differs from what's already on main. Vercel auto-deploys on the push.
+#
+# Cost: zero — GitHub Actions cron is free for public repos. Job runs
+# in ~30 s (npm install dominates; the indexer itself is sub-second
+# against a sparse table).
+#
+# Trigger this manually from the "Actions" tab with workflow_dispatch
+# if you want a fresh snapshot between hourly runs.
+
+name: leaderboard · refresh snapshot
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # hourly, top of hour (UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: write        # needed for the commit + push step below
+
+concurrency:
+  group: leaderboard-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Default token is fine — `permissions: contents: write` above
+          # gives it push access to the same repo.
+          persist-credentials: true
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9.7.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: build typed contract client
+        run: pnpm --filter @flight/game-hub-client build
+
+      - name: refresh leaderboard snapshot
+        env:
+          GAME_HUB_ID: CALPEUANXSCROTCZCTSGP6HKRPF5HE5W43JUWQG6ZRIWMRLANAU2N6YO
+          RPC_URL: https://soroban-testnet.stellar.org
+          NETWORK_PASSPHRASE: 'Test SDF Network ; September 2015'
+        run: pnpm index:leaderboard
+
+      - name: commit + push if changed
+        run: |
+          if git diff --quiet public/leaderboard/; then
+            echo "no change — snapshot is current"
+            exit 0
+          fi
+          git config user.name  "leaderboard-bot"
+          git config user.email "leaderboard-bot@users.noreply.github.com"
+          git add public/leaderboard/
+          git commit -m "leaderboard: hourly snapshot ($(date -u +'%Y-%m-%dT%H:%MZ'))"
+          git push

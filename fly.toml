@@ -1,0 +1,38 @@
+# fly.toml — Birdstrike relay + prover, single Fly Machine.
+#
+# v1: stub-mode (PROVE_MODE=stub), 2 GB / 1 dedicated CPU, auto-stop.
+# A cold start adds ~5–10 s to the first request; proofs take minutes,
+# so this is invisible in practice.
+#
+# To flip on the real Groth16 wrap later: bump [[vm]] to 16 GB +
+# performance-4x and set PROVE_MODE=groth16 in the [env] block (or via
+# `flyctl secrets set PROVE_MODE=groth16`).
+
+app = "proofarcade-relay"
+primary_region = "iad"           # us-east; change per latency target
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PROVE_MODE = "stub"
+  CORS_ORIGIN = "https://proofarcade.xyz"
+  SUBMIT_COOLDOWN_SECONDS = "60"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"    # idle Machines stop after a few minutes
+  auto_start_machines = true     # wake on the next incoming request
+  min_machines_running = 0       # zero floor — pay only when proving
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/health"
+    timeout = "5s"
+
+[[vm]]
+  size = "performance-1x"
+  memory = "2gb"
