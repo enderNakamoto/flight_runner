@@ -10,7 +10,9 @@
 # room to run.
 
 # ── Stage 1: build flight-host with the RISC Zero toolchain ───────────────
-FROM rust:1.83-bookworm AS builder
+# rust:1 = latest 1.x stable. Need ≥ 1.85 so newer transitive deps that
+# require Cargo's stabilised edition2024 (e.g. time-0.3.47) compile.
+FROM rust:1-bookworm AS builder
 
 # rzup needs curl + the usual C-build deps for the host-side cargo build.
 RUN apt-get update && apt-get install -y --no-install-recommends \
