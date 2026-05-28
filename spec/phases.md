@@ -104,34 +104,34 @@ Static frontend on Vercel at `proofarcade.xyz`. Bun relay + `flight-host` contai
 
 ---
 
-## Phase 11 — Real ZK proving on Hetzner
+## Phase 11 — Real ZK proving on Vultr
 
-Move the relay + prover off Fly onto a Hetzner Cloud CCX23 (4 dedicated AMD vCPU / 16 GB / Ubuntu 24.04 / Docker installed). Flight-host runs the real RISC Zero pipeline: STARK in-process, Groth16 wrap inside the official `risczero/risc0-groth16-prover` Docker image (~6 min each at this VM size). The relay's HTTP surface and submit flow are unchanged — only the runtime substrate is different.
+Move the relay + prover off Fly onto a Vultr **High Frequency Compute 4C/16GB** instance (4 high-frequency vCPU / 16 GB / Ubuntu 24.04 / Docker installed). US datacenter (Atlanta or NYC). Flight-host runs the real RISC Zero pipeline: STARK in-process, Groth16 wrap inside the official `risczero/risc0-groth16-prover` Docker image (~6 min each at this VM size). The relay's HTTP surface and submit flow are unchanged — only the runtime substrate is different.
 
 Tasks:
-- Provision Hetzner box via `hcloud` CLI with a cloud-init script that installs Docker, Bun, Rust + rzup, and Caddy
+- Provision Vultr box via `vultr-cli` with a cloud-init script that installs Docker, Bun, Rust + rzup, and Caddy
 - Build `flight-host --release` on the box; deploy `services/server/` as a systemd unit
 - Caddy reverse-proxies `relay.proofarcade.xyz` → `localhost:8080` with auto-issued Let's Encrypt cert
-- DNS cutover: `relay.proofarcade.xyz` A record from Fly IP → Hetzner IP
+- DNS cutover: `relay.proofarcade.xyz` A record from Fly IP → Vultr IP
 - Set env on the box: `PROVE_MODE=groth16`, `VERIFIER_SELECTOR_HEX=73c457ba`, `GITHUB_DISPATCH_TOKEN=…`, `CORS_ORIGIN=https://proofarcade.xyz`
 - Validate the first real proof end-to-end (browser → real Groth16 → MockVerifier still accepts → score lands)
 - Off-chain verify the captured seal by calling Nethermind's verifier (`CDUDXCLMNE7…`) directly via Stellar CLI
 - Cutover admin tx: `game_hub.set_verifier(CDUDXCLMNE7…)` — every submission from this moment forward must verify against real BN254 pairing math
-- Decommission Fly app once the Hetzner box has been serving submissions cleanly for ~24 h
+- Decommission Fly app once the Vultr box has been serving submissions cleanly for ~24 h
 
-**Done when:** A player submits, the Hetzner box produces a real 260-byte Groth16 seal, the Nethermind verifier on chain accepts it via pairing checks, and `MockVerifier` is no longer reachable from `game_hub`'s storage. No mocks anywhere.
+**Done when:** A player submits, the Vultr box produces a real 260-byte Groth16 seal, the Nethermind verifier on chain accepts it via pairing checks, and `MockVerifier` is no longer reachable from `game_hub`'s storage. No mocks anywhere.
 
-**Cost:** ~€18.49/mo flat for the Hetzner CCX23 (hourly billing also available — €0.029/h if we ever shut it down). Replaces the Fly relay + Fly worker line items.
+**Cost:** ~$48/mo flat for the Vultr HFC 4C/16GB instance (hourly billing available at ~$0.071/h if we ever shut it down). USD billing, US-headquartered. Replaces the Fly relay + Fly worker line items. Considered Hetzner CCX23 (Ashburn ~$41/mo); $7/mo gap wasn't worth EUR billing through a German entity.
 
 ---
 
 ## Phase 12 — Proof pipeline visualization
 
-**Gated on Phase 11** — needs the Hetzner prover live so the four-step animation reflects real timings, not mocks.
+**Gated on Phase 11** — needs the Vultr prover live so the four-step animation reflects real timings, not mocks.
 
-Live loading view shown after "Submit Score" while the Hetzner box proves. Four horizontal step nodes (vertical on mobile): **Simulating** (Rust replay) → **Proving** (RISC Zero STARK) → **Wrapping** (Groth16) → **Settling** (Stellar/Soroban). Each node has `queued / active / done / failed` state. A paper-plane sprite travels between nodes as each step completes. Per-step elapsed timer + "~Xs typical" microcopy tuned from real Hetzner worker measurements (expect ~6 min STARK + ~6 min wrap + ~5 s settle). Transport: SSE from the relay with polling fallback. Failure state shows a red node + retry; an optional collapsed terminal pane shows real proof IDs / hashes.
+Live loading view shown after "Submit Score" while the Vultr box proves. Four horizontal step nodes (vertical on mobile): **Simulating** (Rust replay) → **Proving** (RISC Zero STARK) → **Wrapping** (Groth16) → **Settling** (Stellar/Soroban). Each node has `queued / active / done / failed` state. A paper-plane sprite travels between nodes as each step completes. Per-step elapsed timer + "~Xs typical" microcopy tuned from real Vultr worker measurements (expect ~6 min STARK + ~6 min wrap + ~5 s settle). Transport: SSE from the relay with polling fallback. Failure state shows a red node + retry; an optional collapsed terminal pane shows real proof IDs / hashes.
 
-**Done when:** A player who hits "Submit Score" sees a live four-step pipeline animate to completion using real per-step timing from the Hetzner worker, and a transient failure surfaces a retry button.
+**Done when:** A player who hits "Submit Score" sees a live four-step pipeline animate to completion using real per-step timing from the Vultr worker, and a transient failure surfaces a retry button.
 
 ---
 
