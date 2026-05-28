@@ -1,6 +1,6 @@
 # Progress
 
-**Current phase:** Phase 11 — Proof pipeline visualization (not started, gated on real Groth16). Phase 10 done (Vercel frontend at proofarcade.xyz, Fly relay at relay.proofarcade.xyz in stub mode, GitHub Actions cron every 5 min, all TLS auto-issued). Phase 9 done (share buttons + top-10 celebration modal + new-PB toast + OG card). Phase 8 done (minimum-viable game_hub redeploy + on-chain enumeration up to 1500 + indexer cron writing public/leaderboard/<slug>.json + top-N table on /birdstrike/leaderboard). Phase 7 done (rewards-sync messaging + overlay layout polish). Phase 6 done locally. Phase 5 done locally and on testnet.
+**Current phase:** Phase 11 — Real ZK proving on Hetzner (not started; Fly can't host Groth16 wrap because Firecracker microVMs can't run nested Docker). Phase 10 done in stub mode (Vercel frontend at proofarcade.xyz, Fly relay at relay.proofarcade.xyz, GitHub Actions cron every 5 min, all TLS auto-issued, MockVerifier accepts the zero seal). Phase 9 done (share buttons + top-10 celebration modal + new-PB toast + OG card). Phase 8 done (minimum-viable game_hub redeploy + on-chain enumeration up to 1500 + indexer cron writing public/leaderboard/<slug>.json + top-N table on /birdstrike/leaderboard). Phase 7 done (rewards-sync messaging + overlay layout polish). Phase 6 done locally. Phase 5 done locally and on testnet.
 
 For what each phase is, see [`spec/phases.md`](spec/phases.md).
 For commit-level history, see `git log`.
@@ -17,9 +17,10 @@ For commit-level history, see `git log`.
 | 7 — Rewards-sync messaging | done (cyan `RewardsCallout` on Birdstrike card + `/birdstrike/leaderboard`; pre-flight REWARD line "Sentinel points sync to your address"; overlay layouts tightened) |
 | 8 — Leaderboard indexer | done (game_hub redeployed at `CALP…U2N6YO` with on-chain player enumeration up to 1500 silent-skip; `scripts/index-leaderboard.ts` writes `public/leaderboard/<slug>.json`; top-N table renders on `/birdstrike/leaderboard`) |
 | 9 — Social sharing | done (𝕏/Discord/copy-link share buttons in the "Your best" tile, top-10 celebration modal w/ pixel confetti, new-PB toast, 1200×630 OG card + Twitter Card meta) |
-| 10 — Production deploy (Fly.io) | done (Vercel frontend at `https://proofarcade.xyz`; Fly relay at `https://relay.proofarcade.xyz` on shared-cpu-1x/1GB in PROVE_MODE=stub; GitHub Actions cron `*/5 * * * *` refreshing `public/leaderboard/birdstrike.json`; SPA + leaderboard JSON + OG image + CORS preflight all green) |
-| 11 — Proof pipeline visualization | not started (gated on Phase 10) |
-| 12 — Polish + launch | not started |
+| 10 — Production deploy (Vercel + Fly.io) | done in **stub mode** — Vercel frontend at `https://proofarcade.xyz`; Fly relay at `https://relay.proofarcade.xyz` in `PROVE_MODE=stub`; GitHub Actions cron `*/5 * * * *`. Real Groth16 wrap blocked because Fly's Firecracker microVM can't run nested Docker — moved to Phase 11. |
+| 11 — Real ZK proving on Hetzner | not started — provision Hetzner CCX23, migrate relay off Fly, flip `PROVE_MODE=groth16`, swap `MockVerifier` → Nethermind's `CDUDXCLMNE7…`. Tears down Fly app as the last step. |
+| 12 — Proof pipeline visualization | not started (gated on Phase 11) |
+| 13 — Polish + launch | not started |
 
 ## How to use this file
 
