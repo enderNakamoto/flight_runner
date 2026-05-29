@@ -135,11 +135,78 @@ Nothing chain-related appears until the player wants to submit. **Play loop:**
 1. **Play** — keyboard controls (↑/↓ steer, ←/→ throttle). No wallet, no panel.
 2. **Game over** — a small floating "🏆 Submit Score" button fades in at the bottom-right.
 3. **Click Submit** → modal opens.
-4. **Prove this run** — relay generates the RISC Zero proof (5–25 min). The proof is cached in localStorage; the player can close the tab and come back later.
+4. **Settle this run** — the relay produces the score artifact. Timing depends on which proving mode is configured: `attest` returns in ~1–3 s, `boundless` in 5–25 min, `local` in 10–15 min. The artifact is cached in localStorage; the player can close the tab and come back later.
 5. **Connect Wallet** inside the modal (Freighter / xBull / Albedo / etc.) if not already connected.
-6. **Sign + Submit** — the player's wallet signs `submit_score` and pays the ~$0.001 in XLM gas. The score lands on chain.
+6. **Sign + Submit** — the player's wallet signs the appropriate `game_hub` entrypoint (`settle_attested` or `submit_score`) and pays the ~$0.001 in XLM gas. The score lands on chain.
 
 There's no leaderboard view in the UI itself — the contract is the leaderboard. Query it with `stellar contract invoke … get_score …` or any Soroban explorer.
+
+---
+
+## Proving modes
+
+The relay supports three proving backends. Flip with one env var; same `game_hub` contract serves all three.
+
+| Mode | What the relay does | Cost | Player wait | VPS sizing | Trust model |
+|---|---|---|---|---|---|
+| `attest` | Native transcript replay + ed25519 operator signature → `settle_attested` | $0/proof | ~1–3 s | $5/mo basic (1C/1GB) | Trusted operator key |
+| `boundless` | Outsource Groth16 to the Boundless marketplace on Base Mainnet → `submit_score` | $0.03–$0.07/proof | 5–25 min | $5/mo basic (1C/1GB) | ZK (Groth16 verifier) |
+| `local` | r0vm STARK + Groth16 wrap on the VPS → `submit_score` | $0/proof | 10–15 min | Vultr HFC 4C/16GB ($96/mo) | ZK (Groth16 verifier) |
+
+### Flip the mode
+
+Set `PROVE_MODE` in `/etc/proofarcade.env` (or `.env` for local dev) and restart the relay:
+
+```bash
+# On the box:
+sed -i 's/^PROVE_MODE=.*/PROVE_MODE=attest/' /etc/proofarcade.env
+systemctl restart proofarcade-relay
+```
+
+That's the whole flip. No code change, no contract redeploy.
+
+### Per-mode env requirements
+
+**`attest`** — operator key only:
+```
+PROVE_MODE=attest
+OPERATOR_SECRET_KEY=S…              # ed25519, set the matching pub via set_trusted_operator
+```
+
+**`boundless`** — wallet + Pinata + paid RPC:
+```
+PROVE_MODE=boundless
+BOUNDLESS_NETWORK=base-mainnet
+BOUNDLESS_PRIVATE_KEY=0x…           # funded with ETH on Base Mainnet
+BOUNDLESS_RPC_URL=…                 # see "RPC tier" below — free tiers fail in the polling loop
+PINATA_JWT=…                        # for guest ELF / inputs upload to IPFS
+```
+
+**`local`** — no extra env; needs r0vm + Docker on the box:
+```
+PROVE_MODE=local
+```
+
+### RPC tier (only matters for `boundless` mode)
+
+The Boundless SDK's `wait_for_request_fulfillment` polls the chain with wide `eth_getLogs` queries every 5 s. Free-tier RPCs all reject this pattern one way or another:
+
+| RPC | Failure mode |
+|---|---|
+| `https://mainnet.base.org` (publicnode default) | HTTP 429 rate limit after ~50 s |
+| `https://base.llamarpc.com` | HTTP 526 (Cloudflare origin SSL) |
+| `https://base-mainnet.g.alchemy.com/v2/…` (free tier) | HTTP 400 — `eth_getLogs` capped at 10-block range |
+| `https://base.drpc.org` (free tier) | HTTP 408 — query timeout |
+
+**Recommended fix when running `PROVE_MODE=boundless` in production**: Alchemy PAYG (Growth plan, credit card on file). The same Alchemy URL that fails on the free tier works as soon as billing is enabled. ~free at our volume.
+
+If you're running `attest` (the default), none of this matters — no chain polling, no RPC concerns beyond Stellar.
+
+### Latency reality (`boundless` mode)
+
+Lock-to-fulfill latency on Base Mainnet ranges 5–25 min, **driven by Groth16 wrap time on the prover side, not by anything we can fix**. Single-GPU provers take ~25 min for the wrap; premium Bento clusters fulfill in ~5 min but only bid when the offer ceiling clears their cost. The default `OfferParams::builder().max_price(0.000035 ETH)` set in `boundless_path.rs:126` is tuned to attract Bento-class provers; raising it further reduces latency proportionally to spend.
+
+For production UX `attest` is the default. `boundless` is the fallback when ZK proofs are required.
 
 ### Running the relay (pure prover)
 

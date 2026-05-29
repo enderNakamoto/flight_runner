@@ -219,27 +219,127 @@ At our current volume (single-digit proofs/day) Boundless mainnet costs roughly 
 
 ---
 
-## Phase 13 — Proof pipeline visualization
+## Phase 13 — Three-mode prover (`attest` / `boundless` / `local`)
 
-**Was Phase 12** — moved here because Phase 12 became Boundless integration. The animation work is unblocked regardless of which prover backend is live (Vultr or Boundless), but the typical timings shown to the player should be tuned from whichever backend is in production at the time we ship the animation.
+Phase 12 proved Boundless works end-to-end on Base Mainnet, but **observed lock-to-fulfill latency is 5–25 min** (single-GPU provers take ~25 min for the Groth16 wrap; premium Bento clusters fulfill in ~5 min but bid only when the offer ceiling is high enough to clear their cost). That's fundamental to the wrap, not fixable in our code — and unacceptable for the production UX where a player just finished a 90-second run. Add a third proving mode that trades ZK guarantees for sub-second settlement, and make all three swappable via a single env var.
 
-Live loading view shown after "Submit Score" while the proof is being generated. Four horizontal step nodes (vertical on mobile): **Simulating** (Rust replay) → **Proving** (RISC Zero STARK) → **Wrapping** (Groth16) → **Settling** (Stellar/Soroban). Each node has `queued / active / done / failed` state. A paper-plane sprite travels between nodes as each step completes. Per-step elapsed timer + "~Xs typical" microcopy tuned from real worker measurements (Vultr CPU: ~6 min STARK + ~6 min wrap + ~5 s settle; Boundless: ~30 s total + ~5 s settle). Transport: SSE from the relay with polling fallback. Failure state shows a red node + retry; an optional collapsed terminal pane shows real proof IDs / hashes for the curious.
+### The three modes
 
-**Observable progress checkpoints** (what the relay can actually report — silence between these is what the animation needs to cover with dead-reckoning):
-- proof_started (immediate, T+0s)
-- STARK_done (Vultr: r0vm RAM drops; Boundless: `RequestLocked` event on Base)
-- wrap_started (Vultr: docker container appears; Boundless: `RequestFulfilled` event)
-- proof_returned (relay logs `✅ proved`)
-- settling (browser submitting Soroban tx; Horizon stream)
-- settled (tx confirmed in ledger)
+| Mode | Path | Cost | Player wait | VPS needed |
+|---|---|---|---|---|
+| `local` | r0vm + Groth16 wrap on the VPS (Phase 11 path) | $96/mo VPS, $0/proof | 10–15 min | Vultr HFC 4C/16GB |
+| `boundless` | Outsource Groth16 wrap to Boundless marketplace (Phase 12 path) | $5/mo VPS, $0.03–$0.07/proof | 5–25 min | $5/mo basic VPS |
+| **`attest` (new)** | Relay replays transcript natively, signs attestation, submits direct | $5/mo VPS, $0/proof | **~2 sec** | $5/mo basic VPS |
 
-**Done when:** A player who hits "Submit Score" sees a live four-step pipeline animate to completion using real per-step timing from whichever backend is live, and a transient failure surfaces a retry button.
+Mode flip is one env var: `PROVE_MODE=attest|boundless|local`. No other changes — `services/server/src/config.ts` already routes by this var.
+
+### Why attest is the default once shipped
+
+- **Latency**: 1–3 s total (sub-second replay + Stellar RPC roundtrip) vs 5+ min for either ZK path. A finished player submits, sees their score land, doesn't tab away.
+- **Cost**: VPS-only ($5/mo). No per-proof spend, no hot wallet on Base Mainnet to babysit.
+- **Hardware**: drops the Vultr HFC 4C/16GB requirement. Hetzner CAX11 (€4.51/mo ARM) or any 1C/1GB droplet handles it; even a Raspberry Pi would work.
+- **Trust model**: relay becomes a trusted oracle. For a leaderboard game with no cash prizes, acceptable. For adversarial / prize contexts, fall back to a ZK mode via the env flip.
+
+`boundless` and `local` stay shipped as fallbacks for any future game with higher trust requirements, and as proof that the path was real.
+
+### Architecture — one contract, two entrypoints
+
+`game_hub` keeps the existing `submit_score(player, seal, journal)` (used by `boundless` and `local` — both produce identical 260-byte Groth16 seals, indistinguishable to the contract). Adds a new entrypoint:
+
+```rust
+fn settle_attested(
+    env: Env,
+    game_id: u32,
+    player: Address,
+    score: u64,
+    transcript_hash: BytesN<32>,
+    op_signature: BytesN<64>,
+)
+```
+
+The new entrypoint skips the RISC Zero verifier entirely. It ed25519-verifies `op_signature` over `(game_id, player, score, transcript_hash)` against a stored `trusted_operator: Address` slot, then writes to the same leaderboard map. Verifier wiring on the proof entrypoint is untouched — zero regression risk on the existing path.
+
+Contract delta:
+- One new entrypoint (~30–50 LoC)
+- One storage slot: `trusted_operator: Address`
+- One admin setter: `set_trusted_operator(addr)`, gated to the deployer/owner
+
+### Relay delta
+
+Two new files in `services/server/src/`:
+- `attest.ts` — handler for `PROVE_MODE=attest`. Loads `OPERATOR_SECRET_KEY` from env, replays the transcript via a native helper (calls the same Rust state machine `flight-host` already has, but without the R0 wrapper), produces `score + transcript_hash`, signs, returns `{ mode: "attest", score, transcript_hash, signature }` to the browser.
+- A new bin under `services/prover/host` (or a separate light binary) that just replays + outputs JSON — no R0, no docker, no GPU. Reuses the existing `flight_methods` deterministic core. Tiny.
+
+The browser already signs the chain tx itself (Phase 6 model). In attest mode the browser receives the attestation triple, formats a `settle_attested` invocation, and pays its own gas as today.
+
+### Tasks
+
+**Contract (Soroban):**
+- Add `trusted_operator: Address` to game_hub storage; add `set_trusted_operator(addr)` admin function
+- Add `settle_attested(game_id, player, score, transcript_hash, op_signature)` entrypoint
+- Tests: round-trip with a known keypair; reject on wrong signer; reject on tampered score
+- Deploy fresh game_hub (or upgrade in place via `set_admin`-style migration) — testnet first
+
+**Relay (Bun/Rust):**
+- New binary `flight-replay` (or `flight-host --attest`) that produces `score + transcript_hash` without R0 prove. Reuses `flight_methods` deterministic core.
+- `services/server/src/attest.ts` — env-driven operator key, replay subprocess, ed25519 sign
+- Route in `submit.ts`: if `PROVE_MODE=attest`, return attestation triple; else current path
+- Add `OPERATOR_SECRET_KEY` (ed25519, base64 or stellar `S…` seed) to env schema with fail-fast validation
+
+**Web client:**
+- Detect `mode` field in `/api/prove` response
+- For `attest`: format `settle_attested` invocation with the triple; player wallet signs the Stellar tx
+- For `groth16`/`boundless`: unchanged `submit_score` path
+
+**Ops:**
+- Generate operator keypair, store secret in Vultr `/etc/proofarcade.env` (chmod 600)
+- Run `set_trusted_operator(<operator_address>)` from admin
+- Flip `PROVE_MODE=attest`, restart relay
+- Smoke test: real player submission → attestation → on-chain `settle_attested` → leaderboard updated
+- Downsize relay box from HFC 4C/16GB to basic 1C/1GB after attest has been serving cleanly for ~24 h
+
+### Risk surface
+
+- **Operator key compromise**: anyone holding the key can write any score for any player. Mitigation: env-only (never committed), rotate via `set_trusted_operator` if leaked. Same discipline as the Boundless wallet — easier to rotate because no on-chain balance to drain.
+- **Cheat detection completeness**: the native replay must catch *every* invalid transcript the R0 guest would reject — desync, impossible-state edges, oob inputs. The deterministic-sim corpus from Phase 3 (100 transcripts) is the regression net. Run it through the replay binary in CI.
+- **Mode confusion at the contract layer**: a leaderboard entry written via `settle_attested` and one via `submit_score` look identical post-write. If we ever want to separate them (e.g. "verified by ZK" badge on the explorer), the entrypoint needs to set a side flag in storage. Decide at contract-design time, not later.
+
+### Done when
+
+- `PROVE_MODE=attest` produces a sub-3-second end-to-end player experience: click Submit → score visible on chain
+- `PROVE_MODE=boundless` and `PROVE_MODE=local` still work via the env flip with no other changes
+- Phase 3's 100-transcript corpus passes through the replay binary with bit-identical outputs to the R0 guest's journal
+- README has a "Proving modes" table with the flip instructions for each
+- Operator key rotation procedure documented alongside the Boundless wallet rotation procedure
+- Vultr box downsized to 1C/1GB tier
 
 ---
 
-## Phase 14 — Polish + launch
+## Phase 14 — Proof pipeline visualization
 
-**Was Phase 13** — pushed back to make room for Boundless.
+**Was Phase 13** — pushed back to land after attest mode so the animation can show the right step set per mode (attest = 2-node animation; ZK modes = 4-node animation).
+
+Live loading view shown after "Submit Score" while the proof is being generated. Step nodes per mode:
+- `attest`: **Replaying** → **Settling** (2 nodes; total ~2 s)
+- `boundless` / `local`: **Simulating** → **Proving** (STARK) → **Wrapping** (Groth16) → **Settling** (4 nodes; tuned timings per backend)
+
+Each node has `queued / active / done / failed` state. A paper-plane sprite travels between nodes as each step completes. Per-step elapsed timer + "~Xs typical" microcopy tuned from real worker measurements. Transport: SSE from the relay with polling fallback. Failure state shows a red node + retry; an optional collapsed terminal pane shows real proof IDs / hashes for the curious.
+
+**Observable progress checkpoints** (what the relay can actually report — silence between these is what the animation needs to cover with dead-reckoning):
+- proof_started (immediate, T+0s)
+- STARK_done (local: r0vm RAM drops; boundless: `RequestLocked` event on Base; attest: replay returns)
+- wrap_started (local: docker container appears; boundless: `RequestFulfilled` event; attest: N/A)
+- proof_returned (relay logs `✅ proved` or `[attest] signed`)
+- settling (browser submitting Soroban tx; Horizon stream)
+- settled (tx confirmed in ledger)
+
+**Done when:** A player who hits "Submit Score" sees a live pipeline animate to completion using real per-step timing for whichever backend is live, and a transient failure surfaces a retry button.
+
+---
+
+## Phase 15 — Polish + launch
+
+**Was Phase 14** — pushed back behind the three-mode work and the visualization.
 
 Onboarding flow, error states, leaderboard UI with stage-tier badges (Common / Uncommon / Rare / Legendary / Mythical), mobile-friendly layout, performance tuning, security review of the contract.
 
