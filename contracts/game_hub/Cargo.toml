@@ -15,3 +15,4 @@ soroban-sdk = { workspace = true }
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
 mock_verifier = { path = "../mock_verifier" }
+ed25519-dalek = { version = "2", default-features = false }

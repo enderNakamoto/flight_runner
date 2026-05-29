@@ -655,6 +655,7 @@ dependencies = [
 name = "game_hub"
 version = "0.1.0"
 dependencies = [
+ "ed25519-dalek",
  "mock_verifier",
  "soroban-sdk",
 ]

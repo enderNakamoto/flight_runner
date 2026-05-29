@@ -1,9 +1,25 @@
 //! game_hub — multi-game Soroban host (minimum-viable).
 //!
-//! Single contract that hosts any number of RISC Zero–verified games.
+//! Single contract that hosts any number of games, with **two
+//! settlement entrypoints**:
+//!
+//! - `submit_score(game_id, seal, journal)` — RISC Zero ZK path
+//!   (Phases 11–12). Verifies a Groth16 seal against the registered
+//!   image_id via the configured verifier contract.
+//! - `settle_attested(game_id, journal, op_signature)` — attest path
+//!   (Phase 13). Verifies an ed25519 signature from the configured
+//!   trusted operator over `(game_id || journal)`. No RISC Zero
+//!   verifier call. Sub-3-second end-to-end vs 5–25 min for the ZK
+//!   path; trust shifts from math to the operator key.
+//!
+//! Both entrypoints land in the same HighScore + enumeration storage
+//! — `record_journal_state` is the shared internal helper, called
+//! after whichever authenticity check the entrypoint mandates.
+//!
 //! Admin registers each game by pinning its 32-byte ELF `image_id`.
-//! Players run games entirely off-chain; only when they want to record
-//! a score do they prove and submit.
+//! The image_id is consulted by `submit_score` only; `settle_attested`
+//! just checks that the game_id is registered (it doesn't read the
+//! pinned image_id).
 //!
 //! Anti-cheat:
 //! - The proof binds to the player via the 32-byte ED25519 pubkey
@@ -15,7 +31,7 @@
 //!   `start_run` wouldn't have stopped them anyway.
 //!
 //! Storage layout (see `DataKey`):
-//!   - Instance:   `Admin`, `Verifier`
+//!   - Instance:   `Admin`, `Verifier`, `TrustedOperator`
 //!   - Persistent: `ImageId(u32)`,
 //!                 `HighScore(u32, BytesN<32>)`,
 //!                 `PlayerCount(u32)`,
@@ -90,6 +106,7 @@ pub enum Error {
     // effectively pause if ever needed.
     InvalidSeal = 7,
     InvalidJournal = 8,
+    TrustedOperatorNotSet = 9,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -101,6 +118,11 @@ pub enum Error {
 pub enum DataKey {
     Admin,
     Verifier,
+    /// ED25519 public key of the off-chain "trusted operator" that signs
+    /// `settle_attested` payloads (Phase 13 attest mode). Single global
+    /// operator across all games. Instance storage. Optional — only
+    /// required when settle_attested is used.
+    TrustedOperator,
     /// Pinned ELF image hash for a given game. Persistent.
     ImageId(u32),
     /// Player's personal-best score for a game, keyed by the 32-byte
@@ -162,6 +184,76 @@ fn read_player_pubkey(env: &Env, journal: &Bytes) -> BytesN<32> {
         buf[i as usize] = journal.get(12 + i).expect("bounds checked by caller");
     }
     BytesN::from_array(env, &buf)
+}
+
+/// Decode a length-checked 76-byte journal and apply the HighScore +
+/// enumeration state transitions. Shared between `submit_score`
+/// (after ZK verify) and `settle_attested` (after ed25519 verify) so
+/// both proving paths land in identical leaderboard state.
+///
+/// Caller must have already:
+/// - asserted `journal.len() == JOURNAL_SIZE`
+/// - asserted the game_id is registered
+/// - performed whichever authenticity check the entrypoint mandates
+///   (ZK proof for submit_score; ed25519 op sig for settle_attested).
+fn record_journal_state(env: &Env, game_id: u32, journal: &Bytes) {
+    let score = read_u32_le(journal, 0);
+    let ticks = read_u32_le(journal, 4);
+    let seed = read_u32_le(journal, 8);
+    let player_pubkey = read_player_pubkey(env, journal);
+
+    // ── HighScore update ──────────────────────────────────────────────
+    let hs_key = DataKey::HighScore(game_id, player_pubkey.clone());
+    let existing: Option<HighScoreEntry> = env.storage().persistent().get(&hs_key);
+    let is_pb = match &existing {
+        None => true,
+        Some(old) => score > old.score || (score == old.score && ticks > old.ticks_survived),
+    };
+    if is_pb {
+        let entry = HighScoreEntry {
+            score,
+            ticks_survived: ticks,
+            seed,
+            settled_at: env.ledger().timestamp(),
+        };
+        env.storage().persistent().set(&hs_key, &entry);
+        env.events().publish(
+            (symbol_short!("pb"), game_id, player_pubkey.clone()),
+            (score, ticks, seed),
+        );
+    }
+
+    // ── Enumeration (silent-skip past cap) ────────────────────────────
+    let seen_key = DataKey::PlayerSeen(game_id, player_pubkey.clone());
+    let already_seen: bool = env
+        .storage()
+        .persistent()
+        .get(&seen_key)
+        .unwrap_or(false);
+    if !already_seen {
+        let count: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PlayerCount(game_id))
+            .unwrap_or(0);
+        if count < MAX_PLAYERS_PER_GAME {
+            env.storage().persistent().set(&seen_key, &true);
+            env.storage()
+                .persistent()
+                .set(&DataKey::PlayerByIndex(game_id, count), &player_pubkey);
+            env.storage()
+                .persistent()
+                .set(&DataKey::PlayerCount(game_id), &(count + 1));
+            env.events().publish(
+                (symbol_short!("newplayr"), game_id),
+                (player_pubkey.clone(), count + 1),
+            );
+        }
+        // else: silent skip — score still landed in HighScore.
+    }
+
+    env.events()
+        .publish((symbol_short!("settled"), game_id, player_pubkey), (score, ticks));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -243,6 +335,33 @@ impl GameHub {
         env.storage().instance().get(&DataKey::Verifier)
     }
 
+    /// Set or rotate the ED25519 public key trusted to sign
+    /// `settle_attested` payloads (Phase 13 attest mode). Setting this
+    /// is what *enables* attest mode for the contract — until it's set,
+    /// `settle_attested` returns `TrustedOperatorNotSet`. Rotating
+    /// replaces the prior pubkey; in-flight signed payloads against the
+    /// old key stop verifying.
+    pub fn set_trusted_operator(env: Env, new_operator: BytesN<32>) -> Result<(), Error> {
+        let admin = require_admin(&env)?;
+        admin.require_auth();
+        let old: Option<BytesN<32>> = env.storage().instance().get(&DataKey::TrustedOperator);
+        env.storage()
+            .instance()
+            .set(&DataKey::TrustedOperator, &new_operator);
+        env.events().publish(
+            (symbol_short!("setoper"),),
+            (
+                old.unwrap_or_else(|| BytesN::from_array(&env, &[0u8; 32])),
+                new_operator,
+            ),
+        );
+        Ok(())
+    }
+
+    pub fn get_trusted_operator(env: Env) -> Option<BytesN<32>> {
+        env.storage().instance().get(&DataKey::TrustedOperator)
+    }
+
     // ── Score submission (permissionless) ────────────────────────────────
 
     /// Verify a RISC Zero proof and conditionally update the committed
@@ -283,66 +402,53 @@ impl GameHub {
         let verifier = VerifierClient::new(&env, &verifier_addr);
         verifier.verify(&seal, &image_id, &journal_digest_bytes);
 
-        // Decode journal — layout matches services/prover/core/src/types.rs.
-        let score = read_u32_le(&journal, 0);
-        let ticks = read_u32_le(&journal, 4);
-        let seed = read_u32_le(&journal, 8);
-        let player_pubkey = read_player_pubkey(&env, &journal);
+        record_journal_state(&env, game_id, &journal);
+        Ok(())
+    }
 
-        // ── HighScore update ───────────────────────────────────────────
-        let hs_key = DataKey::HighScore(game_id, player_pubkey.clone());
-        let existing: Option<HighScoreEntry> = env.storage().persistent().get(&hs_key);
-        let is_pb = match &existing {
-            None => true,
-            Some(old) => {
-                score > old.score || (score == old.score && ticks > old.ticks_survived)
-            }
-        };
-        if is_pb {
-            let entry = HighScoreEntry {
-                score,
-                ticks_survived: ticks,
-                seed,
-                settled_at: env.ledger().timestamp(),
-            };
-            env.storage().persistent().set(&hs_key, &entry);
-            env.events().publish(
-                (symbol_short!("pb"), game_id, player_pubkey.clone()),
-                (score, ticks, seed),
-            );
+    /// Attest-mode settlement (Phase 13). Verifies an ed25519 signature
+    /// from the configured `TrustedOperator` over `(game_id || journal)`
+    /// in lieu of a RISC Zero proof, then applies the same HighScore +
+    /// enumeration update that `submit_score` does. The relay is the
+    /// trust anchor here — the operator's ed25519 secret must never be
+    /// committed and rotates via `set_trusted_operator`.
+    ///
+    /// The journal layout is identical to `submit_score`'s (76 bytes,
+    /// see `JOURNAL_SIZE` doc above), so a relay can produce the same
+    /// shape from a native transcript replay without R0 in the loop.
+    ///
+    /// The signed message is exactly `game_id_le (4 bytes) || journal
+    /// (76 bytes)` — concatenating game_id stops a single signed
+    /// journal from being replayed against a different game_id.
+    pub fn settle_attested(
+        env: Env,
+        game_id: u32,
+        journal: Bytes,
+        op_signature: BytesN<64>,
+    ) -> Result<(), Error> {
+        if journal.len() != JOURNAL_SIZE {
+            return Err(Error::InvalidJournal);
         }
 
-        // ── Enumeration (silent-skip past cap) ────────────────────────
-        let seen_key = DataKey::PlayerSeen(game_id, player_pubkey.clone());
-        let already_seen: bool = env
+        if !env.storage().persistent().has(&DataKey::ImageId(game_id)) {
+            return Err(Error::GameNotFound);
+        }
+
+        let operator: BytesN<32> = env
             .storage()
-            .persistent()
-            .get(&seen_key)
-            .unwrap_or(false);
-        if !already_seen {
-            let count: u32 = env
-                .storage()
-                .persistent()
-                .get(&DataKey::PlayerCount(game_id))
-                .unwrap_or(0);
-            if count < MAX_PLAYERS_PER_GAME {
-                env.storage().persistent().set(&seen_key, &true);
-                env.storage()
-                    .persistent()
-                    .set(&DataKey::PlayerByIndex(game_id, count), &player_pubkey);
-                env.storage()
-                    .persistent()
-                    .set(&DataKey::PlayerCount(game_id), &(count + 1));
-                env.events().publish(
-                    (symbol_short!("newplayr"), game_id),
-                    (player_pubkey.clone(), count + 1),
-                );
-            }
-            // else: silent skip — score still landed in HighScore.
-        }
+            .instance()
+            .get(&DataKey::TrustedOperator)
+            .ok_or(Error::TrustedOperatorNotSet)?;
 
-        env.events()
-            .publish((symbol_short!("settled"), game_id, player_pubkey), (score, ticks));
+        // Build the signed message: game_id LE bytes || journal.
+        let mut msg = Bytes::from_array(&env, &game_id.to_le_bytes());
+        msg.append(&journal);
+
+        // Panics on bad signature — same failure semantics as the
+        // ZK verifier path in submit_score.
+        env.crypto().ed25519_verify(&operator, &msg, &op_signature);
+
+        record_journal_state(&env, game_id, &journal);
         Ok(())
     }
 
