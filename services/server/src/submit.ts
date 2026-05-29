@@ -100,9 +100,25 @@ export async function handleProve(req: Request): Promise<Response> {
       stdout: "pipe",
       stderr: "pipe",
     });
+
+    // Tee flight-host stderr live to our own stderr (journal) AND collect
+    // for the error response. Without this, long-running proves (Boundless
+    // poll, local STARK) look stuck because nothing is logged until exit.
+    const stderrChunks: Uint8Array[] = [];
+    const stderrPump = (async () => {
+      const reader = proc.stderr.getReader();
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        stderrChunks.push(value);
+        process.stderr.write(value);
+      }
+    })();
+
     const exitCode = await proc.exited;
+    await stderrPump;
     if (exitCode !== 0) {
-      const stderr = await new Response(proc.stderr).text();
+      const stderr = Buffer.concat(stderrChunks).toString();
       return jsonError(500, `flight-host exited ${exitCode}: ${stderr.slice(-500)}`);
     }
 
