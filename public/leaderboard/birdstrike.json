@@ -2,8 +2,8 @@
   "game_id": 1,
   "slug": "birdstrike",
   "contract_id": "CDCYHA36MQRFM4J25B3EQKIWM27E3DUW6W3W6FLWJD7T7ZVNBVAUSMYW",
-  "generated_at": "2026-05-29T02:07:45.806Z",
-  "generated_at_unix": 1780020465,
+  "generated_at": "2026-05-29T03:24:01.152Z",
+  "generated_at_unix": 1780025041,
   "player_count": 1,
   "top_n": 100,
   "entries": [
@@ -11,10 +11,10 @@
       "rank": 1,
       "address": "GDQV2B726KOZUO5U2ITPMSOYK7LD2UYGB3BQ44HYPKK37V63TWZMNV2A",
       "pubkey_hex": "e15d07faf29d9a3bb4d226f649d857d63d53060ec30e70f87a95bfd7db9db2c6",
-      "score": 3,
-      "ticks_survived": 273,
-      "seed": 1902724846,
-      "settled_at": 1780019935
+      "score": 40,
+      "ticks_survived": 1979,
+      "seed": 1905643515,
+      "settled_at": 1780023265
     }
   ]
 }
