@@ -4,13 +4,28 @@
 
 import { CONFIG } from "./config.js";
 
-export interface ProveOk {
+/// ZK-mode response (groth16 / boundless / local). Browser submits
+/// via `game_hub::submit_score(game_id, seal, journal)`.
+export interface ProveOkZk {
   ok: true;
+  mode?: "groth16" | "stark" | "stub" | "boundless";
   seal_hex: string;
   journal_hex: string;
   score?: number;
   ticks_survived?: number;
 }
+/// Attest-mode response (Phase 13). Browser submits via
+/// `game_hub::settle_attested(game_id, journal, op_signature)`.
+export interface ProveOkAttest {
+  ok: true;
+  mode: "attest";
+  game_id: number;
+  journal_hex: string;
+  signature_hex: string;
+  score?: number;
+  ticks_survived?: number;
+}
+export type ProveOk = ProveOkZk | ProveOkAttest;
 export interface ProveErr {
   ok: false;
   error: string;

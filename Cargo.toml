@@ -7,6 +7,7 @@ members = [
   "services/prover/core",
   "services/prover/methods",
   "services/prover/host",
+  "services/prover/replay",
 ]
 
 # Guest is built for riscv32im-risc0-zkvm-elf — kept out of this workspace

@@ -1,0 +1,20 @@
+[package]
+name = "flight_replay"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Phase 13 attest-mode helper. Runs the deterministic flight_scroll sim natively over a transcript and emits the canonical 76-byte journal. No RISC Zero, no Boundless — just replay + a JSON blob the relay can sign."
+
+[[bin]]
+name = "flight-replay"
+path = "src/main.rs"
+
+[dependencies]
+flight_scroll_core = { path = "../core" }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+hex = "0.4"
+serde_json = "1"
+stellar-strkey = "0.0.13"

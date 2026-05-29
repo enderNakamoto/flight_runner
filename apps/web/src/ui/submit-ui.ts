@@ -307,14 +307,20 @@ export function mountSubmitUI(): void {
     async function signAndSubmit(p: PendingProof) {
       setStatus("Building tx and asking your wallet to sign …");
       try {
-        const seal = Buffer.from(p.seal_hex, "hex");
-        const journal = Buffer.from(p.journal_hex, "hex");
         const client = getClient();
-        const tx = await client.submit_score({
-          game_id: CONFIG.flightScrollGameId,
-          seal,
-          journal,
-        });
+        const journal = Buffer.from(p.journal_hex, "hex");
+        const tx =
+          p.kind === "attest"
+            ? await client.settle_attested({
+                game_id: p.game_id,
+                journal,
+                op_signature: Buffer.from(p.signature_hex, "hex"),
+              })
+            : await client.submit_score({
+                game_id: CONFIG.flightScrollGameId,
+                seal: Buffer.from(p.seal_hex, "hex"),
+                journal,
+              });
         const { result } = await tx.signAndSend();
         (result as { unwrap: () => void }).unwrap();
         clearPendingProof();
@@ -384,23 +390,38 @@ export function mountSubmitUI(): void {
 
     async function proveThenCache(run: CapturedRun, addr: string) {
       const transcript = run.bytes;
-      setStatus("Proving on the relay (this takes a few minutes) …");
+      setStatus("Settling on the relay …");
       const r: ProveResult = await proveTranscript(addr, transcript);
       if (!r.ok) {
         setStatus(`Prove failed: ${r.error}`, "err");
         return;
       }
-      const p: PendingProof = {
-        player_strkey: addr,
-        seal_hex: r.seal_hex,
-        journal_hex: r.journal_hex,
-        score: r.score ?? 0,
-        ticks_survived: r.ticks_survived ?? 0,
-        proved_at: Date.now(),
-      };
+      const p: PendingProof =
+        r.mode === "attest"
+          ? {
+              kind: "attest",
+              player_strkey: addr,
+              game_id: r.game_id,
+              journal_hex: r.journal_hex,
+              signature_hex: r.signature_hex,
+              score: r.score ?? 0,
+              ticks_survived: r.ticks_survived ?? 0,
+              proved_at: Date.now(),
+            }
+          : {
+              player_strkey: addr,
+              seal_hex: r.seal_hex,
+              journal_hex: r.journal_hex,
+              score: r.score ?? 0,
+              ticks_survived: r.ticks_survived ?? 0,
+              proved_at: Date.now(),
+            };
       setPendingProof(p);
       clearLatestRun();
-      setStatus(`Proof built (score=${p.score}). Sign with your wallet to submit.`, "ok");
+      setStatus(
+        `${p.kind === "attest" ? "Attestation" : "Proof"} ready (score=${p.score}). Sign with your wallet to submit.`,
+        "ok",
+      );
       renderAction();
     }
 

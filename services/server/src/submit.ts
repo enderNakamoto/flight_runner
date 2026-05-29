@@ -13,6 +13,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { StrKey } from "@stellar/stellar-sdk";
+import { runAttest } from "./attest.ts";
 import { CONFIG } from "./config.ts";
 
 const MAX_TRANSCRIPT_BYTES = 64 * 1024;
@@ -80,6 +81,13 @@ export async function handleProve(req: Request): Promise<Response> {
 
   try {
     await writeFile(transcriptPath, transcript);
+
+    // Attest mode (Phase 13) routes to flight-replay + ed25519 sign.
+    // Cooldown, validation, and tmpdir cleanup are shared with the ZK path.
+    if (CONFIG.proveMode === "attest") {
+      return await runAttest(player_strkey, transcriptPath, proofPath);
+    }
+
     console.log(`[relay] proving for ${player_strkey} (${transcript.length} bytes)`);
 
     const modeFlag: string[] =
