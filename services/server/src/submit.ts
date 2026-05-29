@@ -85,6 +85,7 @@ export async function handleProve(req: Request): Promise<Response> {
     const modeFlag: string[] =
       CONFIG.proveMode === "stub" ? ["--stub-seal"] :
       CONFIG.proveMode === "stark" ? ["--local"] :
+      CONFIG.proveMode === "boundless" ? ["--boundless"] :
       [];
     const proc = Bun.spawn({
       cmd: [
@@ -134,10 +135,13 @@ export async function handleProve(req: Request): Promise<Response> {
     }
 
     const sealBytes = sealHex.length / 2;
-    if (CONFIG.proveMode === "groth16" && sealBytes !== 260) {
+    if (
+      (CONFIG.proveMode === "groth16" || CONFIG.proveMode === "boundless") &&
+      sealBytes !== 260
+    ) {
       return jsonError(
         500,
-        `groth16 seal must be exactly 260 bytes, got ${sealBytes} — prover misconfigured`,
+        `${CONFIG.proveMode} seal must be exactly 260 bytes, got ${sealBytes} — prover misconfigured`,
       );
     }
 

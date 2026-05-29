@@ -28,6 +28,9 @@ use flight_scroll_core::types::{ProverOutput, JOURNAL_BYTES};
 use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts, Receipt};
 use serde_json::json;
 
+#[cfg(feature = "boundless")]
+mod boundless_path;
+
 /// RISC Zero v3.0.x Groth16 verifier-selector. First 4 bytes of
 /// SHA-256(Groth16ReceiptVerifierParameters). Pinned in spec §4.5.
 /// Stellar verifier contract expects the seal prefixed with this selector.
@@ -58,6 +61,16 @@ struct Cli {
     #[arg(long)]
     stub_seal: bool,
 
+    /// Outsource Groth16 proving to the Boundless marketplace instead of
+    /// running r0vm locally. Requires the `boundless` feature at build
+    /// time AND BOUNDLESS_NETWORK / BOUNDLESS_PRIVATE_KEY / PINATA_JWT
+    /// env vars at runtime. The returned seal is identical in shape
+    /// (260 bytes, `73c457ba` selector prefix) to the local Groth16
+    /// path, and verifies against the same Nethermind contract.
+    #[cfg(feature = "boundless")]
+    #[arg(long)]
+    boundless: bool,
+
     /// Where to write proof_artifacts.json (default: ./proof_artifacts.json).
     #[arg(short, long, default_value = "proof_artifacts.json")]
     out: PathBuf,
@@ -85,6 +98,11 @@ fn main() -> Result<()> {
 
     if cli.stub_seal {
         return write_stub_artifacts(&cli, &transcript, player_pubkey);
+    }
+
+    #[cfg(feature = "boundless")]
+    if cli.boundless {
+        return run_boundless(&cli, &transcript, player_pubkey);
     }
 
     // Pack raw bytes into LE u32 words for the guest. div_ceil so the last
@@ -210,6 +228,68 @@ fn id_to_bytes(id: [u32; 8]) -> [u8; 32] {
         out[i * 4..i * 4 + 4].copy_from_slice(&w.to_le_bytes());
     }
     out
+}
+
+/// Outsource Groth16 proving to Boundless. Identical output shape to the
+/// local path (same journal, same 260-byte seal with `73c457ba` selector
+/// prefix). The local sim is also run natively to fill in score / ticks /
+/// seed fields for the artifacts JSON, since Boundless returns only seal +
+/// journal and the relay's response shape includes those fields.
+#[cfg(feature = "boundless")]
+fn run_boundless(
+    cli: &Cli,
+    transcript: &[u8],
+    player_pubkey: [u8; 32],
+) -> Result<()> {
+    eprintln!("[host] mode = boundless (remote Groth16 via marketplace)");
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("build tokio runtime")?;
+
+    let (seal, journal) = rt.block_on(boundless_path::prove(
+        FLIGHT_GUEST_ELF,
+        transcript,
+        player_pubkey,
+    ))?;
+
+    if journal.len() != JOURNAL_BYTES {
+        return Err(anyhow!(
+            "boundless journal length {} != {JOURNAL_BYTES}",
+            journal.len()
+        ));
+    }
+    let output = ProverOutput::from_journal_bytes(&journal)
+        .map_err(|e| anyhow!("decode journal: {e}"))?;
+
+    let image_id_bytes = id_to_bytes(FLIGHT_GUEST_ID);
+    let artifacts = json!({
+        "mode":     "boundless",
+        "seal":     hex::encode(&seal),
+        "image_id": hex::encode(image_id_bytes),
+        "journal":  hex::encode(&journal),
+        "output": {
+            "score":           output.score,
+            "ticks_survived":  output.ticks_survived,
+            "seed":            output.seed,
+            "player":          cli.player.clone(),
+            "player_pubkey":   hex::encode(output.player_pubkey),
+            "transcript_hash": hex::encode(output.transcript_hash),
+        }
+    });
+    let body = serde_json::to_string_pretty(&artifacts)? + "\n";
+    fs::write(&cli.out, body).with_context(|| format!("write {}", cli.out.display()))?;
+    eprintln!(
+        "[host] wrote {} ({} bytes seal via boundless)",
+        cli.out.display(),
+        seal.len()
+    );
+    eprintln!(
+        "[host] score={} ticks={} seed=0x{:08x}",
+        output.score, output.ticks_survived, output.seed
+    );
+    Ok(())
 }
 
 /// Skip RISC Zero entirely — run the sim natively to compute score/ticks,
