@@ -1,0 +1,72 @@
+#cloud-config
+# Phase 11 — Vultr prover bootstrap.
+# Runs on first boot of a fresh Ubuntu 24.04 Vultr instance.
+# Installs Docker + Bun + Rust + rzup + Caddy, clones the repo,
+# wires systemd. Does NOT build flight-host (15 min) — that's manual.
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - git
+  - build-essential
+  - pkg-config
+  - libssl-dev
+  - ca-certificates
+  - jq
+  - clang
+  - cmake
+  - unzip
+
+runcmd:
+  # Docker
+  - curl -fsSL https://get.docker.com | sh
+  - systemctl enable --now docker
+  - docker pull risczero/risc0-groth16-prover:v3.0
+
+  # Bun
+  - curl -fsSL https://bun.sh/install | bash
+  - ln -s /root/.bun/bin/bun /usr/local/bin/bun
+
+  # Rust + rzup
+  - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+  - bash -c 'source /root/.cargo/env && rustup default stable'
+  - curl -L https://risczero.com/install | bash
+  - bash -c 'PATH=/root/.risc0/bin:$PATH rzup install rust'
+  - bash -c 'PATH=/root/.risc0/bin:$PATH rzup install cargo-risczero'
+  - bash -c 'PATH=/root/.risc0/bin:$PATH rzup install r0vm'
+
+  # Repo
+  - git clone https://github.com/enderNakamoto/flight_runner.git /opt/proofarcade
+  - cd /opt/proofarcade && bun install --cwd services/server --production
+
+  # Caddy
+  - apt install -y debian-keyring debian-archive-keyring apt-transport-https
+  - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+  - apt update && apt install -y caddy
+  - cp /opt/proofarcade/vultr/Caddyfile /etc/caddy/Caddyfile
+  - systemctl restart caddy
+
+  # systemd unit (env file populated manually before start)
+  - cp /opt/proofarcade/vultr/proofarcade-relay.service /etc/systemd/system/
+  - touch /etc/proofarcade.env
+  - chmod 600 /etc/proofarcade.env
+  - systemctl daemon-reload
+  - systemctl enable proofarcade-relay
+
+  # Firewall
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw --force enable
+
+final_message: |
+  Phase 11 cloud-init complete. Next steps:
+    1. ssh root@<this-box> and verify with smoke tests in runbook B6
+    2. cd /opt/proofarcade && cargo build --release --bin flight-host  (~15 min)
+    3. Populate /etc/proofarcade.env per runbook B8
+    4. systemctl start proofarcade-relay

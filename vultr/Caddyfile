@@ -1,0 +1,18 @@
+# Phase 11 — TLS reverse-proxy for the Bun relay.
+# Caddy auto-issues a Let's Encrypt cert the moment relay.proofarcade.xyz
+# resolves to this box. ACME challenge happens on port 80; 443 redirect
+# is automatic.
+
+relay.proofarcade.xyz {
+    reverse_proxy localhost:8080 {
+        header_up X-Real-IP {remote_host}
+        flush_interval -1
+    }
+
+    encode gzip
+
+    log {
+        output file /var/log/caddy/relay.log
+        format json
+    }
+}

@@ -1,51 +1,47 @@
-# Deploy guide — Phase 10 (production)
+# Deploy guide — Phase 11 (production)
 
 Three pieces of infrastructure, three providers, one domain:
 
 | Piece                      | Provider          | Hostname                  |
 |----------------------------|-------------------|---------------------------|
 | Static frontend (Vite SPA) | Vercel            | `proofarcade.xyz`         |
-| Relay + prover             | Fly.io            | `relay.proofarcade.xyz`   |
+| Relay + prover             | Vultr (HFC 4C/16GB) | `relay.proofarcade.xyz` |
 | Leaderboard snapshot cron  | GitHub Actions    | (commits to `main` hourly)|
 
 Domain (`proofarcade.xyz`) is registered at Namecheap. TLS is handled
-automatically by both Vercel and Fly when you point a custom hostname
-at them.
+by Vercel for the frontend and by Caddy on the Vultr box for the relay.
+
+> **Phase 10 footnote:** the relay originally lived on Fly.io. Fly
+> Machines run on Firecracker microVMs whose stripped kernel can't host
+> nested Docker, so the RISC Zero Groth16 wrap (`docker run
+> risczero/risc0-groth16-prover`) failed with `os error 2`. The deploy
+> moved to a Vultr High-Frequency Compute instance in Phase 11. The
+> archived `Dockerfile`, `fly.toml`, and `.dockerignore` live under
+> `archive/` for reference.
 
 ---
 
-## 1. Fly — relay + prover
+## 1. Vultr — relay + prover
 
-The relay and `flight-host` ship as a single image (see `Dockerfile`)
-to keep v1 deploy simple. Single Machine, auto-stop, 2 GB / 1 dedicated
-CPU. Bump to 16 GB when flipping `PROVE_MODE` to `groth16` later.
+Full provisioning runbook: `spec/phase-11-runbook.md`. Operator notes
+(SSH, logs, upgrades, teardown): `vultr/README.md`.
 
-```bash
-# Install flyctl once.
-brew install flyctl
-fly auth login
+Quick summary of the live setup:
 
-# From repo root:
-fly launch --copy-config --name proofarcade-relay --region iad --no-deploy
-fly deploy
+- Ubuntu 24.04, `vhf-4c-16gb` plan, US datacenter
+- `cloud-init.yml` bootstraps Docker, Bun, Rust + rzup, Caddy
+- `flight-host` built natively on the box (`cargo build --release`)
+- `services/server/` runs as a systemd unit (`proofarcade-relay.service`)
+- Caddy reverse-proxies `relay.proofarcade.xyz` → `localhost:8080`
+  and auto-issues a Let's Encrypt cert
+- Runtime env in `/etc/proofarcade.env` (chmod 600), incl.
+  `PROVE_MODE=groth16`, `VERIFIER_SELECTOR_HEX=73c457ba`,
+  `GITHUB_DISPATCH_TOKEN=…`, `CORS_ORIGIN=https://proofarcade.xyz`
 
-# Wire the custom hostname.
-fly certs add relay.proofarcade.xyz
-# flyctl prints two DNS records (A + AAAA, or a CNAME) — paste them
-# into Namecheap (see §3 below).
-
-# Confirm:
-fly status
-fly logs               # tail
-curl https://proofarcade-relay.fly.dev/health
-```
-
-Default env is set in `fly.toml` for `PROVE_MODE=stub` +
-`CORS_ORIGIN=https://proofarcade.xyz`. To override:
+To verify the relay is up:
 
 ```bash
-fly secrets set PROVE_MODE=groth16
-fly secrets set CORS_ORIGIN="https://proofarcade.xyz,https://staging.proofarcade.xyz"
+curl https://relay.proofarcade.xyz/health
 ```
 
 ---
@@ -64,7 +60,6 @@ vercel login
 
 # From repo root, link or create the project:
 vercel link
-# accept the defaults — Vercel reads vercel.json for build config.
 
 # Set env vars (production):
 vercel env add VITE_GAME_HUB_CONTRACT_ID production
@@ -81,9 +76,6 @@ vercel env add VITE_RELAY_URL production
 
 vercel env add VITE_PRODUCTION_URL production
 # paste: https://proofarcade.xyz
-
-# VITE_TWITTER_HANDLE defaults to "sentinel_fi" in code — only set if you
-# want to override.
 
 # First deploy:
 vercel --prod
@@ -102,16 +94,13 @@ hourly leaderboard commits from GitHub Actions).
 
 Log in → Domain List → **Manage** on `proofarcade.xyz` → **Advanced DNS**.
 
-Add the following records (Vercel + Fly each print exact values
-after `vercel domains add` / `fly certs add`):
+| Type   | Host    | Value                              | Notes                       |
+|--------|---------|------------------------------------|-----------------------------|
+| `A`    | `@`     | `76.76.21.21`                      | Vercel apex (their docs)    |
+| `CNAME`| `www`   | `cname.vercel-dns.com.`            | Vercel www subdomain        |
+| `A`    | `relay` | `<vultr-main-ip>`                  | Vultr relay box             |
 
-| Type   | Host    | Value                                       | Notes                       |
-|--------|---------|---------------------------------------------|-----------------------------|
-| `A`    | `@`     | `76.76.21.21`                               | Vercel apex (their docs)    |
-| `CNAME`| `www`   | `cname.vercel-dns.com.`                     | Vercel www subdomain        |
-| `CNAME`| `relay` | `proofarcade-relay.fly.dev.`                | Fly relay subdomain         |
-
-TTL: leave as Automatic (60s during initial cutover, 30 min later).
+TTL: leave as Automatic (60 s during initial cutover, 30 min later).
 
 Cert issuance happens automatically on both sides ~1–5 min after DNS
 propagates. Verify:
@@ -148,18 +137,17 @@ time a player settles a score, so other viewers see the new entry in
 3. **Resource owner**: your user, **Repository access**: only the arcade repo
 4. **Repository permissions** → **Actions** → **Read and write**
 5. Generate, copy the `github_pat_...` value
-6. Set on Fly:
+6. Set on the Vultr box — add to `/etc/proofarcade.env`:
 
-   ```bash
-   fly secrets set GITHUB_DISPATCH_TOKEN=github_pat_xxx --app proofarcade-relay
    ```
+   GITHUB_DISPATCH_TOKEN=github_pat_xxx
+   ```
+
+   Then `systemctl restart proofarcade-relay`.
 
 7. (Optional override if your repo isn't the default
-   `enderNakamoto/flight_runner`):
-
-   ```bash
-   fly secrets set GITHUB_REPO=your-owner/your-repo --app proofarcade-relay
-   ```
+   `enderNakamoto/flight_runner`) — add `GITHUB_REPO=owner/repo` to the
+   same env file.
 
 The relay endpoint `POST /api/refresh-leaderboard` accepts a request,
 debounces successive calls within `REFRESH_DEBOUNCE_SECONDS` (default
@@ -189,8 +177,8 @@ curl -s https://proofarcade.xyz/leaderboard/birdstrike.json | jq '.generated_at'
 
 Then play a run on `https://proofarcade.xyz/birdstrike`, hit Submit
 Score, sign the tx, and watch for the `pb` event on the relay logs
-(`fly logs --app proofarcade-relay`) + the next hourly snapshot
-picking up the new entry.
+(`ssh root@<vultr-ip> 'journalctl -u proofarcade-relay -f'`) + the next
+hourly snapshot picking up the new entry.
 
 ---
 
@@ -200,7 +188,7 @@ picking up the new entry.
 |-------------------------------|-----------------------------------|
 | Namecheap domain              | ~$10–15/yr (already bought)       |
 | Vercel hobby tier             | Free                              |
-| Fly.io Machine (auto-stop)    | ~$0–5/mo at launch volume         |
+| Vultr HFC 4C/16GB             | ~$96/mo flat (384 GB NVMe, 5 TB BW) |
 | GitHub Actions cron           | Free for public repos             |
 | Soroban testnet RPC           | Free                              |
-| **Total**                     | **~$0–5/mo + domain renewal**     |
+| **Total**                     | **~$96/mo + domain renewal**      |

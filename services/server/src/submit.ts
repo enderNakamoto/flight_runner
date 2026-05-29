@@ -133,6 +133,14 @@ export async function handleProve(req: Request): Promise<Response> {
       sealHex = sel + sealHex;
     }
 
+    const sealBytes = sealHex.length / 2;
+    if (CONFIG.proveMode === "groth16" && sealBytes !== 260) {
+      return jsonError(
+        500,
+        `groth16 seal must be exactly 260 bytes, got ${sealBytes} — prover misconfigured`,
+      );
+    }
+
     console.log(
       `[relay] ✅ proved score=${artifacts.output?.score ?? "?"} for ${player_strkey} (seal ${sealHex.length / 2} bytes)`,
     );

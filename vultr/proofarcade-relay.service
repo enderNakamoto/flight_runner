@@ -1,0 +1,21 @@
+[Unit]
+Description=Proofworks Arcade relay + prover (Bun)
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/proofarcade/services/server
+EnvironmentFile=/etc/proofarcade.env
+ExecStart=/usr/local/bin/bun src/index.ts
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=proofarcade-relay
+
+# No timeouts — a real Groth16 wrap can take 25 min mid-request.
+TimeoutStopSec=600
+
+[Install]
+WantedBy=multi-user.target

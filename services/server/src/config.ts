@@ -42,3 +42,12 @@ export const CONFIG = {
   /// Empty / unset = no prefix added (stub mode just outputs 260 zeros).
   verifierSelectorHex: optional("VERIFIER_SELECTOR_HEX", ""),
 };
+
+if (CONFIG.verifierSelectorHex) {
+  const sel = CONFIG.verifierSelectorHex.replace(/^0x/, "");
+  if (!/^[0-9a-fA-F]{8}$/.test(sel)) {
+    throw new Error(
+      `VERIFIER_SELECTOR_HEX must be exactly 4 bytes (8 hex chars), got: ${CONFIG.verifierSelectorHex}`,
+    );
+  }
+}
