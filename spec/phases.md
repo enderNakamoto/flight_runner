@@ -143,6 +143,47 @@ Onboarding flow, error states, leaderboard UI with stage-tier badges (Common / U
 
 ---
 
+## Phase 14 — Boundless marketplace migration (optional)
+
+Replace local CPU Groth16 proving on the Vultr box with the **Boundless** decentralized proving marketplace. Vultr's CPU pipeline takes ~10–15 min per proof (STARK on 4C/16GB + Groth16 wrap inside `risczero/risc0-groth16-prover` Docker). Boundless GPU provers return the same 260-byte Groth16 seal in ~30–60 s for ~$0.04–$0.17 per proof. The on-chain side is unchanged: Nethermind's verifier `CDUDXCLMNE7…` accepts whichever path produced the seal. **Local skill installed** at `~/.claude/skills/boundless/SKILL.md` (sourced from `https://docs.boundless.network/skill.md`) — future sessions auto-load full SDK reference, gotchas, and decision matrices.
+
+**Trigger to start this phase** (any one):
+- Phase 12's pipeline animation can't paper over the 12-min wait and player conversion drops
+- Sustained proof volume >30/day where 1 Vultr box's queue starts backing up
+- A second game ships (multi-game multiplies per-proof cycles) and serial proving becomes the bottleneck
+- The Vultr `vhf-4c-16gb` plan re-prices again or capacity in `ewr`/`atl` becomes unreliable
+
+**Architecture choice — keep the relay, swap only the prover:**
+- Bun relay at `relay.proofarcade.xyz` stays where it is (Vultr or move back to Fly $5/mo tier; nested Docker no longer required, so Fly works again)
+- `services/server/src/submit.ts` is the only file in the JS path that changes — instead of spawning `flight-host`, it calls a new helper that submits to Boundless and polls for fulfillment
+- `services/prover/host/src/main.rs` gets a `#[cfg(feature = "boundless")]` block (chickenz's pattern) — the host binary picks Boundless vs local prove based on a build flag, so local prove still works for testing without burning Base ETH
+- `services/prover/methods` (guest ELF + image_id) is unchanged — Boundless takes our ELF, runs it on someone else's GPU, returns the same seal we'd have produced locally
+- Stellar contracts unchanged — `set_image_id` may run once more if the Boundless build environment produces a different image_id than the Vultr build, but the verifier and game_hub stay put
+
+Tasks:
+- Add `boundless-market = "1.3"`, `alloy = { version = "0.8", features = ["full"] }`, `url`, `tokio` to `services/prover/host/Cargo.toml` (gated behind `[features] boundless = []`)
+- Implement `prove_via_boundless(elf, stdin)` in the host using `Client::builder().with_rpc_url(...).with_private_key(...).with_uploader_config(StorageUploaderConfig::default())`; submit with `.with_groth16_proof()`; poll `client.wait_for_request_fulfillment(id, Duration::from_secs(5), expires)`
+- Upload guest ELF to Pinata once (large enough to need the storage provider); store IPFS URL in env or commit alongside `methods.rs`
+- Set up wallet: `cast wallet new` → fund the address with ~$50 in Base ETH (bridge via Coinbase or Base Bridge); store private key in `/etc/proofarcade.env` as `BOUNDLESS_PRIVATE_KEY=0x…` (chmod 600 already in place)
+- Set up Pinata: free tier account, generate JWT, add `PINATA_JWT=…` to `/etc/proofarcade.env`
+- Add `BOUNDLESS_RPC_URL=https://mainnet.base.org` (production) or `https://sepolia.base.org` (testnet first)
+- Cutover toggle: add `PROVE_MODE=boundless` as a new mode in `services/server/src/config.ts` next to `groth16`/`stark`/`stub`; the relay picks the right code path based on this single env var so rollback is one config change
+- Test on Base Sepolia first (testnet ETH from faucet), then flip to mainnet only after off-chain verify passes against our Nethermind verifier on a Boundless-produced seal (this re-runs the same "C5 trust-but-verify" gate from Phase 11)
+- Optionally: extract the new image_id from the Boundless-rebuilt ELF and `set_image_id` again if it differs from the Vultr value `b9836a4b…`
+- Drop or downsize the Vultr box once Boundless has been serving cleanly for ~24 h — relay no longer needs r0vm/docker/risc0, so a Fly micro instance ($5/mo) is enough
+
+**Done when:** A player who hits Submit Score gets a fulfilled Groth16 seal back from Boundless within ~60 s typical, the seal verifies against Nethermind's contract on Stellar testnet, and `submit_score` lands cleanly. Vultr CPU pipeline is either decommissioned or kept as a flag-gated fallback (`PROVE_MODE=groth16` still works for local debugging).
+
+**Cost model:** Pay-per-proof ($0.04–$0.17 per proof from Boundless's published estimates) replaces flat $96/mo Vultr. Break-even is roughly 600–2400 proofs/month; below that, Boundless saves money; above that, the Vultr box's flat cost wins but capacity becomes the binding constraint. Per-proof pricing is set per-request (`max_price` parameter); raise to attract bidders when the market is congested.
+
+**Risk surface:**
+- New failure mode: Boundless market goes quiet (no provers bidding under the offered price) → request expires → relay must either retry with higher `max_price` or fall back to local prove. The feature-flag arrangement above keeps the fallback path alive.
+- Hot wallet on Base mainnet — same monitoring discipline as the GitHub PAT: rotate if leaked, watch balance, top up before depletion
+- ELF + per-request inputs published to IPFS (Pinata): fine for game data which is public anyway, but explicit awareness in case a future game has secrets in its inputs
+- Boundless is on Base mainnet (real money); not strictly more risky than the Stellar testnet path but worth flagging that this is the first real-money infrastructure component
+
+---
+
 ## After v1 — see `architecture.md` §10 (Roadmap)
 
 v2 = multi-game (second game + `game_hub` aggregator). v3 = tournaments + economy. Out of scope for these phases.
