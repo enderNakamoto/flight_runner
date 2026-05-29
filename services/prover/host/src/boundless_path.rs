@@ -91,10 +91,12 @@ pub async fn prove(
     eprintln!("[boundless] network={network} rpc={rpc_url_str}");
     eprintln!("[boundless] wallet={}", private_key.address());
 
-    // PINATA_JWT is read by the SDK's Pinata uploader from env.
-    let _ = pinata_jwt; // validated above; SDK reads env directly
+    // The Pinata uploader needs the JWT passed explicitly to the builder
+    // — it does NOT auto-read PINATA_JWT from env, despite the env-var
+    // convention suggesting otherwise.
     let storage = StorageUploaderConfig::builder()
         .storage_uploader(StorageUploaderType::Pinata)
+        .pinata_jwt(pinata_jwt)
         .build()
         .context("build Pinata storage uploader config")?;
 
