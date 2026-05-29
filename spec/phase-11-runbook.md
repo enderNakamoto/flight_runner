@@ -136,29 +136,29 @@ User registered a key via the web UI. Note its `id` — we'll pass it to `instan
 
 ### B3. Choose region and plan
 
-- **Region:** Atlanta (`atl`) — well-connected US East, lower fees than NYC for some classes. Alternative: `ewr` (NYC) for shorter trans-Atlantic.
-- **Plan:** `vhf-4c-16gb` — Vultr High Frequency Compute 4 vCPU / 16 GB / 128 GB NVMe, ~$48/mo.
-- **OS:** Ubuntu 24.04 LTS — `vultr os list | grep -i 'ubuntu 24'` to find the OS id.
+- **Region:** Atlanta (`atl`) preferred — well-connected US East. **Often out of stock** for this plan; `ewr` (Newark) is the proven fallback (Phase 11 ran here).
+- **Plan:** `vhf-4c-16gb` — Vultr High Frequency Compute 4 vCPU / 16 GB / **384 GB NVMe / 5 TB BW**, **~$96/mo flat** (Vultr re-priced from the original $48/mo plan; disk/BW grew too). Hourly billing ~$0.143/h available if you tear down between sessions.
+- **OS:** Ubuntu 24.04 LTS — id **`2284`** (confirm with `vultr os list -o json 2>/dev/null | jq '.os[] | select(.name|test("Ubuntu 24"))'`).
+- **Touch `~/.vultr-cli.yaml`** once before running anything — the CLI prepends a noisy "no config file" warning to *stdout* (not stderr) and breaks every `| jq` pipe until the file exists.
 
 ### B4. Provision
 
 ```bash
 vultr instance create \
-    --region atl \
+    --region ewr \
     --plan vhf-4c-16gb \
-    --os <ubuntu-24-04-os-id> \
+    --os 2284 \
     --label proofarcade-prover \
-    --hostname proofarcade-prover \
+    --host proofarcade-prover \
     --ssh-keys <ssh-key-id-from-B2> \
-    --user-data "$(base64 -i vultr/cloud-init.yml)" \
-    --enable-ipv4=true \
-    --enable-ipv6=true \
-    -o json
+    --userdata-file vultr/cloud-init.yml \
+    --ipv6 \
+    -o json 2>/dev/null
 ```
 
-(Verify the exact flag names with `vultr instance create --help` before running — Vultr CLI flag conventions occasionally shift between versions.)
+Flag-name corrections vs. earlier drafts: `--host` (not `--hostname`), `--userdata-file <path>` (not `--user-data "$(base64 -i ...)"` — the CLI handles encoding), and `--ipv6` is the only IP-family toggle (IPv4 is always on).
 
-Returns instance metadata including `main_ip`. Save it; we need it for DNS later.
+Returns instance metadata including `main_ip` and `v6_main_ip`. Save both; DNS needs A *and* AAAA records (Let's Encrypt prefers IPv6 for ACME challenges — if AAAA still resolves to Fly, cert issuance will fail).
 
 ### B5. Wait for cloud-init to finish
 
@@ -252,10 +252,11 @@ Should return `{"ok":true,"role":"prover"}`. The `--resolve` flag bypasses DNS s
 User updates Namecheap DNS:
 - Log in at https://ap.www.namecheap.com/
 - Domain List → Manage on `proofarcade.xyz` → Advanced DNS
-- Find the `relay` A record currently pointing at Fly's IP (`66.241.124.100`)
-- Change Value to `<main_ip>` from Vultr
-- Leave AAAA `relay → 2a09:8280:1::11c:15d0:0` for now (Fly IPv6) or remove if we want clean cutover
+- Find the `relay` A record currently pointing at Fly's IP (`66.241.124.100`) → change to Vultr `<main_ip>`
+- **Also** repoint the AAAA `relay` from Fly's `2a09:8280:1::11c:15d0:0` → Vultr's `<v6_main_ip>` (or delete the AAAA entirely). **Don't leave AAAA on Fly** — Let's Encrypt prefers IPv6 for ACME challenges and will fail forever validating against an IP that doesn't know about this cert request.
 - Save (TTL is Automatic / 60 s)
+
+C1's `curl --resolve` smoke test only proves the relay is up internally; it can't actually validate Caddy's TLS until DNS points here, since the cert hasn't been issued yet. So in practice C1 just confirms the box is reachable, and the real TLS validation happens after C2 propagation.
 
 Wait ~5 min for propagation:
 
@@ -300,7 +301,43 @@ If wrap errors: most likely `docker pull` issue or rapidsnark missing. Inspect w
 
 This is the **trust-but-verify** step. MockVerifier accepted the seal, but did it actually verify mathematically?
 
-After the real proof completes, capture the seal + journal + image_id from the relay log (or from the browser's submit_score transaction). Then call Nethermind's verifier directly:
+After the real proof completes, capture the seal + journal + image_id. The relay deletes its `/tmp/flight-relay-*` dir on success, so the easiest source is the on-chain `submit_score` tx — parameters[3] is the 260-byte seal (XDR-encoded `Bytes`) and parameters[4] is the 76-byte journal:
+
+```bash
+curl -s "https://horizon-testnet.stellar.org/accounts/<player-G-address>/operations?limit=5&order=desc" \
+  | jq '._embedded.records[0].parameters'
+# Each XDR Bytes value has an 8-byte header (4-byte SC_BYTES discriminant + 4-byte length); strip it to get raw hex.
+echo "<base64>" | base64 -d | xxd -p -c 10000 | sed 's/^................//'
+```
+
+The verifier wants `--journal` to be the **32-byte sha256 of the raw journal bytes**, not the raw journal itself:
+
+```bash
+echo "<journal-hex>" | xxd -r -p | shasum -a 256
+```
+
+**Critical pre-flight check — image_id alignment.** A fresh `cargo build` on the Vultr box produces a *different* image_id than the original Fly-era registration. The verifier checks the seal's public-input commitment against the on-chain registered image_id; mismatch = panic. Compare:
+
+```bash
+# Vultr-built image_id (FLIGHT_GUEST_ID array → little-endian bytes per u32)
+ssh root@<main_ip> 'cat /opt/proofarcade/target/release/build/flight_methods-*/out/methods.rs' \
+  | grep FLIGHT_GUEST_ID
+python3 -c "import struct; ids=[<paste 8 u32s>]; print(b''.join(struct.pack('<I',x) for x in ids).hex())"
+
+# On-chain registered image_id
+stellar contract invoke --id CDCYHA36MQRFM4J25B3EQKIWM27E3DUW6W3W6FLWJD7T7ZVNBVAUSMYW \
+    --source flight-deployer-testnet --network testnet -- get_image_id --game_id 1
+```
+
+If they differ — and they almost certainly will after any rebuild on a new host — call `set_image_id` first:
+
+```bash
+stellar contract invoke --id CDCYHA36MQRFM4J25B3EQKIWM27E3DUW6W3W6FLWJD7T7ZVNBVAUSMYW \
+    --source flight-deployer-testnet --network testnet --send=yes \
+    -- set_image_id --game_id 1 --new_image_id <vultr-built-image-id>
+```
+
+Then run verify:
 
 ```bash
 stellar contract invoke \
@@ -309,12 +346,12 @@ stellar contract invoke \
     --network testnet \
     -- verify \
     --seal <seal-hex> \
-    --image_id <image-id-hex> \
+    --image_id <vultr-built-image-id> \
     --journal <journal-digest-hex>
 ```
 
 If returns `null` (no panic): the proof is real cryptography. Proceed to C6.
-If panics with anything: STOP, do not cutover. Debug the wrap.
+If panics with `Error(Contract, #0)`: usually image_id mismatch (see above) or selector mismatch (first 4 bytes of seal should be `73 c4 57 ba`). If those check out, the wrap output is genuinely wrong — debug the host setup.
 
 ### C6. Verifier cutover — admin tx
 
@@ -392,9 +429,17 @@ Final commit that lands the file restructure:
 
 ## Part F — File templates
 
-These get committed in Part A so they're tracked. Their content drives Part B's provisioning.
+**Live files are in `vultr/` at the repo root** — `cloud-init.yml`, `Caddyfile`, `proofarcade-relay.service`, `README.md`. The snippets below are the *original* templates kept for reference; they had three bugs that were fixed live during the Phase 11 bring-up, and the in-tree files are the authoritative versions. Read the in-tree files when re-provisioning, not these snippets.
 
-### `vultr/cloud-init.yml`
+**Bugs fixed during bring-up** (already applied to the in-tree files):
+
+1. **`cloud-init.yml`** — every `curl … | bash` installer (bun, rustup, rzup) crashed on `set -u $HOME` because cloud-init's `runcmd` runs each command via `sh -c` with no `HOME`. Fix: wrap each affected line as `HOME=/root bash -c '…'` and prefix `rzup install` lines with `PATH=/root/.risc0/bin:/root/.cargo/bin:$PATH`. Also removed the `docker pull risczero/risc0-groth16-prover:v3.0` warmup (stale tag — risc0 crate pulls the correct tag on first flight-host invocation).
+
+2. **`Caddyfile`** — without an `email` and explicit `acme_ca`, Caddy 2.x silently obtains certs from Let's Encrypt **staging** which no browser trusts. Fix: add a global `{ email <…> acme_ca https://acme-v02.api.letsencrypt.org/directory }` block.
+
+3. **`proofarcade-relay.service`** — systemd's default `PATH` (`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin`) doesn't include `/root/.cargo/bin` where `r0vm` lives (rzup symlinks it there). risc0's Groth16 wrap exec's `r0vm` and gets `os error 2` (the same error we hit on Fly, just from a different root cause). Fix: add `Environment=PATH=/root/.risc0/bin:/root/.cargo/bin:…` and `Environment=HOME=/root`.
+
+### Original `vultr/cloud-init.yml` (stale — see `vultr/cloud-init.yml`)
 
 ```yaml
 #cloud-config

@@ -7,6 +7,11 @@ Wants=docker.service
 Type=simple
 WorkingDirectory=/opt/proofarcade/services/server
 EnvironmentFile=/etc/proofarcade.env
+# r0vm lives in /root/.cargo/bin (symlinked by rzup); risc0 shells out
+# to it from the Groth16 wrap and fails with os error 2 if PATH is the
+# systemd default. HOME is also required by rzup's lookup.
+Environment=PATH=/root/.risc0/bin:/root/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin
+Environment=HOME=/root
 ExecStart=/usr/local/bin/bun src/index.ts
 Restart=on-failure
 RestartSec=5

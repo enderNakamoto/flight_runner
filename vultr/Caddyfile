@@ -2,6 +2,15 @@
 # Caddy auto-issues a Let's Encrypt cert the moment relay.proofarcade.xyz
 # resolves to this box. ACME challenge happens on port 80; 443 redirect
 # is automatic.
+#
+# Global block: pin the production ACME CA and set an account email so
+# Caddy doesn't silently default to staging (which produces certs that
+# no browser will trust).
+
+{
+    email dhar.saurav@gmail.com
+    acme_ca https://acme-v02.api.letsencrypt.org/directory
+}
 
 relay.proofarcade.xyz {
     reverse_proxy localhost:8080 {

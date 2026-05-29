@@ -3,6 +3,13 @@
 # Runs on first boot of a fresh Ubuntu 24.04 Vultr instance.
 # Installs Docker + Bun + Rust + rzup + Caddy, clones the repo,
 # wires systemd. Does NOT build flight-host (15 min) — that's manual.
+#
+# NOTE: cloud-init's runcmd executes each item with `sh -c` and HOME
+# unset. Many installer scripts (bun, rustup, rzup) crash on `set -u`
+# when they reference $HOME. We prefix every such line with HOME=/root.
+# We also do NOT pre-pull the Groth16 prover image — the risc0 crate
+# pulls the correct tag on first invocation of `flight-host`, and tag
+# names drift between risc0 versions.
 
 package_update: true
 package_upgrade: true
@@ -20,26 +27,24 @@ packages:
   - unzip
 
 runcmd:
-  # Docker
+  # Docker (pull happens on first flight-host invocation, not here)
   - curl -fsSL https://get.docker.com | sh
   - systemctl enable --now docker
-  - docker pull risczero/risc0-groth16-prover:v3.0
 
   # Bun
-  - curl -fsSL https://bun.sh/install | bash
-  - ln -s /root/.bun/bin/bun /usr/local/bin/bun
+  - HOME=/root bash -c 'curl -fsSL https://bun.sh/install | bash'
+  - test -x /root/.bun/bin/bun && ln -sf /root/.bun/bin/bun /usr/local/bin/bun
 
   # Rust + rzup
-  - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-  - bash -c 'source /root/.cargo/env && rustup default stable'
-  - curl -L https://risczero.com/install | bash
-  - bash -c 'PATH=/root/.risc0/bin:$PATH rzup install rust'
-  - bash -c 'PATH=/root/.risc0/bin:$PATH rzup install cargo-risczero'
-  - bash -c 'PATH=/root/.risc0/bin:$PATH rzup install r0vm'
+  - HOME=/root bash -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable'
+  - HOME=/root bash -c 'curl -L https://risczero.com/install | bash'
+  - HOME=/root PATH=/root/.risc0/bin:/root/.cargo/bin:$PATH rzup install rust
+  - HOME=/root PATH=/root/.risc0/bin:/root/.cargo/bin:$PATH rzup install cargo-risczero
+  - HOME=/root PATH=/root/.risc0/bin:/root/.cargo/bin:$PATH rzup install r0vm
 
   # Repo
   - git clone https://github.com/enderNakamoto/flight_runner.git /opt/proofarcade
-  - cd /opt/proofarcade && bun install --cwd services/server --production
+  - cd /opt/proofarcade && /usr/local/bin/bun install --cwd services/server --production
 
   # Caddy
   - apt install -y debian-keyring debian-archive-keyring apt-transport-https
