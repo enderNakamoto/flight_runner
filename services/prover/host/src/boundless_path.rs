@@ -122,7 +122,7 @@ pub async fn prove(
     let request = client
         .new_request()
         .with_program(elf)
-        .with_stdin(&stdin)
+        .with_stdin(stdin)
         .with_groth16_proof();
 
     eprintln!("[boundless] submitting request …");
@@ -138,7 +138,10 @@ pub async fn prove(
         .await
         .context("wait_for_request_fulfillment")?;
 
-    let seal = fulfillment.seal.clone();
+    // `fulfillment.seal` is alloy::primitives::Bytes; convert to Vec<u8>
+    // so the rest of the host code (which works in Vec<u8>) doesn't need
+    // to know about alloy types.
+    let seal = fulfillment.seal.to_vec();
     let data = fulfillment.data().context("fulfillment data")?;
     let journal = data
         .journal()
