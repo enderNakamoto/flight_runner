@@ -23,6 +23,8 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use boundless_market::{
+    price_oracle::{Amount, Asset},
+    request_builder::OfferParams,
     storage::{StorageUploaderConfig, StorageUploaderType},
     Client,
 };
@@ -121,11 +123,21 @@ pub async fn prove(
         transcript.len()
     );
 
+    // max_price = 2× the first observed mainnet payout (0.00001743 ETH).
+    // Raising the ceiling lets premium provers bid sooner.
+    let max_price_wei: alloy::primitives::U256 =
+        alloy::primitives::utils::parse_units("0.000035", "ether")
+            .expect("constant parses")
+            .into();
+    let max_price = Amount::new(max_price_wei, Asset::ETH);
+    eprintln!("[boundless] max_price={max_price_wei} wei (0.000035 ETH)");
+
     let request = client
         .new_request()
         .with_program(elf)
         .with_stdin(stdin)
-        .with_groth16_proof();
+        .with_groth16_proof()
+        .with_offer(OfferParams::builder().max_price(max_price));
 
     eprintln!("[boundless] submitting request …");
     let (request_id, expires_at) = client
