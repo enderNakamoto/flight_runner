@@ -33,6 +33,12 @@ const STYLE = `
     color: #5dd3ff;
     font-weight: 600;
   }
+  .fs-rewards-callout .copy a {
+    color: #5dd3ff;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .fs-rewards-callout .copy a:hover { color: #fff; }
   @keyframes fs-rewards-bob {
     0%, 100% { transform: translateY(0); }
     50%      { transform: translateY(-3px); }
@@ -72,7 +78,7 @@ const CHEST_SVG = `
   </svg>
 `;
 
-const COPY = `<strong>Just play and have fun.</strong> Every score you post counts — your rewards stay synced to <strong>Sentinel points</strong> for as long as you keep playing from the <strong>same wallet</strong>.`;
+const COPY = `<strong>Just play and have fun.</strong> Every score you post counts — your rewards stay synced to <strong>Sentinel points</strong> for as long as you keep playing from the <strong>same wallet</strong>. Sign up at <a href="https://trysentinel.xyz" target="_blank" rel="noreferrer noopener">trysentinel.xyz</a> with that same wallet to claim them.`;
 
 export function injectRewardsCalloutStyle(): void {
   if (document.getElementById("fs-rewards-callout-style")) return;

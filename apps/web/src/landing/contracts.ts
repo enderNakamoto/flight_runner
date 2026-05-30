@@ -78,27 +78,50 @@ const STYLE = `
     max-width: 640px;
   }
 
-  /* Section heading for each network (Testnet today; Mainnet later). */
-  #fs-contracts .net-head {
+  /* Collapsible network block (Testnet today; Mainnet later). */
+  #fs-contracts .net-block {
     max-width: 760px;
-    margin: 32px auto 12px;
+    margin: 32px auto 0;
+  }
+  #fs-contracts .net-block + .net-block { margin-top: 24px; }
+  #fs-contracts .net-block > summary {
+    list-style: none;
+    cursor: pointer;
     padding: 0 4px 8px;
+    margin-bottom: 12px;
     display: flex;
     justify-content: space-between;
     align-items: baseline;
+    gap: 12px;
     border-bottom: 1px solid var(--border);
+    user-select: none;
   }
-  #fs-contracts .net-head h2 {
+  #fs-contracts .net-block > summary::-webkit-details-marker { display: none; }
+  #fs-contracts .net-block > summary .net-title {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  #fs-contracts .net-block > summary .chev {
+    color: var(--muted);
+    font-size: 11px;
+    transition: transform 0.15s ease;
+    display: inline-block;
+  }
+  #fs-contracts .net-block[open] > summary .chev { transform: rotate(90deg); }
+  #fs-contracts .net-block > summary h2 {
     font-family: var(--font-pixel);
     font-size: 14px;
     color: var(--accent);
     margin: 0;
     letter-spacing: 0.5px;
   }
-  #fs-contracts .net-head .meta {
+  #fs-contracts .net-block > summary .meta {
     color: var(--muted);
     font-size: 12px;
   }
+  #fs-contracts .net-block > summary:hover .chev,
+  #fs-contracts .net-block > summary:hover h2 { color: #fff; }
 
   #fs-contracts .net,
   #fs-contracts .games {
@@ -826,72 +849,77 @@ export function mountContracts(): void {
         <h1>CONTRACTS</h1>
         <div class="lede">On-chain addresses, game ids, and what's wired right now.</div>
 
-        <div class="net-head">
-          <h2>${b.label}</h2>
-          <div class="meta">Stellar Soroban</div>
-        </div>
-
-        <div class="net">
-          <div class="row"><span class="k">Passphrase</span><span class="v">${escape(b.passphrase)}</span></div>
-          <div class="row"><span class="k">RPC</span><span class="v">${escape(b.rpc)}</span></div>
-        </div>
-
-        <div class="games">
-          <div class="row"><span class="k">GAMES (id → name)</span><span class="v"></span></div>
-          ${games
-            .map(
-              (g) => `
-            <div class="row">
-              <span class="id">id ${g.gameId}</span>
-              <span><span class="name">${escape(g.title)}</span> &nbsp; <span class="slug">/${escape(g.slug)}</span></span>
+        <details class="net-block" open>
+          <summary>
+            <div class="net-title">
+              <span class="chev">▸</span>
+              <h2>${b.label}</h2>
             </div>
-          `,
-            )
-            .join("")}
-        </div>
+            <div class="meta">Stellar Soroban</div>
+          </summary>
 
-        <div class="card">
-          <div class="head">
-            <div class="title">GAME_HUB</div>
-            <div class="badge">C-contract</div>
+          <div class="net">
+            <div class="row"><span class="k">Passphrase</span><span class="v">${escape(b.passphrase)}</span></div>
+            <div class="row"><span class="k">RPC</span><span class="v">${escape(b.rpc)}</span></div>
           </div>
-          <div class="desc">
-            The multi-game host. Every score lands here. Stores per-(game_id, player) high scores
-            and the enumerated player list. Two settlement entrypoints:
-            <code>submit_score</code> (ZK path — verifies a Groth16 seal via the verifier contract)
-            and <code>settle_attested</code> (attest path — verifies an operator signature).
-            Same leaderboard storage for both.
-          </div>
-          <div class="id">${escape(b.gameHubId || "(not configured for this build)")}</div>
-          <div class="actions">
-            ${b.gameHubId ? `<a href="${contractUrl(b.network, b.gameHubId)}" target="_blank" rel="noreferrer noopener">↗ open</a>` : ""}
-            ${b.gameHubId ? `<button data-copy="${escape(b.gameHubId)}">copy</button>` : ""}
-          </div>
-        </div>
 
-        ${buildLivePanel(b, games, st)}
-
-        <div class="query">
-          <div class="query-head">
-            <h2>QUERY A SCORE</h2>
-            <div class="sub">Paste any player's G… address to see their on-chain personal best for each registered game.</div>
+          <div class="games">
+            <div class="row"><span class="k">GAMES (id → name)</span><span class="v"></span></div>
+            ${games
+              .map(
+                (g) => `
+              <div class="row">
+                <span class="id">id ${g.gameId}</span>
+                <span><span class="name">${escape(g.title)}</span> &nbsp; <span class="slug">/${escape(g.slug)}</span></span>
+              </div>
+            `,
+              )
+              .join("")}
           </div>
-          <div class="box">
-            <div class="controls">
-              <input
-                type="text"
-                id="fs-query-input"
-                placeholder="G... (Stellar address)"
-                value="${escape(getAddress() ?? "")}"
-                spellcheck="false"
-                autocomplete="off"
-              />
-              <button class="query-go" id="fs-query-go">Query</button>
+
+          <div class="card">
+            <div class="head">
+              <div class="title">GAME_HUB</div>
+              <div class="badge">C-contract</div>
             </div>
-            <div class="msg" id="fs-query-msg">${getAddress() ? "Pre-filled with your connected wallet — click Query." : ""}</div>
-            <div class="results" id="fs-query-results"></div>
+            <div class="desc">
+              The multi-game host. Every score lands here. Stores per-(game_id, player) high scores
+              and the enumerated player list. Two settlement entrypoints:
+              <code>submit_score</code> (ZK path — verifies a Groth16 seal via the verifier contract)
+              and <code>settle_attested</code> (attest path — verifies an operator signature).
+              Same leaderboard storage for both.
+            </div>
+            <div class="id">${escape(b.gameHubId || "(not configured for this build)")}</div>
+            <div class="actions">
+              ${b.gameHubId ? `<a href="${contractUrl(b.network, b.gameHubId)}" target="_blank" rel="noreferrer noopener">↗ open</a>` : ""}
+              ${b.gameHubId ? `<button data-copy="${escape(b.gameHubId)}">copy</button>` : ""}
+            </div>
           </div>
-        </div>
+
+          ${buildLivePanel(b, games, st)}
+
+          <div class="query">
+            <div class="query-head">
+              <h2>QUERY A SCORE</h2>
+              <div class="sub">Paste any player's G… address to see their on-chain personal best for each registered game.</div>
+            </div>
+            <div class="box">
+              <div class="controls">
+                <input
+                  type="text"
+                  id="fs-query-input"
+                  placeholder="G... (Stellar address)"
+                  value="${escape(getAddress() ?? "")}"
+                  spellcheck="false"
+                  autocomplete="off"
+                />
+                <button class="query-go" id="fs-query-go">Query</button>
+              </div>
+              <div class="msg" id="fs-query-msg">${getAddress() ? "Pre-filled with your connected wallet — click Query." : ""}</div>
+              <div class="results" id="fs-query-results"></div>
+            </div>
+          </div>
+        </details>
 
         <div class="foot">
           Mainnet contracts will get their own section when we launch there. <br/>
