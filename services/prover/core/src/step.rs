@@ -27,7 +27,7 @@ use crate::stages::{
 };
 use crate::types::{
     Enemy, EnemyKind, FuelToken, GameOverReason, GameState, Missile, MissileTier, Pillar,
-    PlayerInput, BTN_DOWN, BTN_LEFT, BTN_RIGHT, BTN_UP,
+    PlayerInput, BTN_DOWN, BTN_LEFT, BTN_RIGHT, BTN_UP, SCORE_CAP,
 };
 
 // ---- Pre-fp'd coordinate constants ----
@@ -577,6 +577,17 @@ pub fn step_mut(state: &mut GameState, input: PlayerInput) {
         if ns.fuel_enabled {
             state.next_fuel_distance = state.world_distance + ns.fuel_spawn_period;
         }
+    }
+
+    // ---- Score cap ----
+    // Reaching SCORE_CAP ends the run as a "win" — the player landed in
+    // DXB. Capped so the HUD reads exactly the ceiling rather than the
+    // over-the-line tick. Runs that already ended for another reason this
+    // tick keep their original game-over reason.
+    if !state.game_over && state.score >= SCORE_CAP {
+        state.score = SCORE_CAP;
+        state.game_over = true;
+        state.game_over_reason = GameOverReason::ReachedDXB;
     }
 }
 

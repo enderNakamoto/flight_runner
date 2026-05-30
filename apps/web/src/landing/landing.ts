@@ -87,6 +87,118 @@ const STYLE = `
     opacity: 0.7;
   }
 
+  /* Animated pixelated planes — they fly across the page leaving a
+     fading exhaust trail. Each flight is a flex row [trail | plane]
+     so the plane sits at the leading end of its trail. RTL flights
+     get scaleX(-1) which flips the plane sprite AND the gradient,
+     keeping the trail "behind" the plane regardless of direction. */
+  #fs-landing .planes {
+    position: absolute; inset: 0; pointer-events: none; z-index: 1;
+    overflow: hidden;
+  }
+  #fs-landing .flight {
+    position: absolute;
+    left: 0;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    opacity: 0.55;
+    /* The plane sits at the leading edge; trail fans out from it. */
+    transform-origin: 50% 50%;
+    will-change: transform;
+  }
+  #fs-landing .flight .trail {
+    width: var(--trail-len, 100px);
+    height: 2px;
+    background: linear-gradient(to right, transparent 0%, currentColor 100%);
+    margin-right: -1px; /* tuck under the plane's tail */
+  }
+  #fs-landing .flight .plane { line-height: 0; }
+  #fs-landing .flight .plane svg {
+    display: block;
+    shape-rendering: crispEdges;
+  }
+  #fs-landing .flight.ltr {
+    animation: fs-fly-ltr var(--speed, 22s) linear var(--delay, 0s) infinite;
+  }
+  #fs-landing .flight.rtl {
+    animation: fs-fly-rtl var(--speed, 22s) linear var(--delay, 0s) infinite;
+  }
+  @keyframes fs-fly-ltr {
+    from { transform: translateX(-30vw) rotate(var(--heading, 0deg)); }
+    to   { transform: translateX(130vw) rotate(var(--heading, 0deg)); }
+  }
+  @keyframes fs-fly-rtl {
+    /* scaleX(-1) flips both the plane sprite and the trail gradient,
+       so the trail still trails behind even in the reverse direction. */
+    from { transform: translateX(130vw) scaleX(-1) rotate(var(--heading, 0deg)); }
+    to   { transform: translateX(-30vw) scaleX(-1) rotate(var(--heading, 0deg)); }
+  }
+  /* Respect reduced-motion preference — freeze the planes mid-flight. */
+  @media (prefers-reduced-motion: reduce) {
+    #fs-landing .flight { animation: none; }
+  }
+
+  /* Random Pacman drifting across the page background, eating a
+     row of STATIC dots. The dots are absolutely positioned at fixed
+     viewport-relative coordinates — they don't move. Each dot has
+     its own keyframe (generated at mount time in makePacman) whose
+     "eaten" frame fires at the exact cycle percentage when Pacman's
+     wrapper translate has him crossing that dot's screen position.
+     Both Pacman's translate and every dot's animation share the
+     same duration + delay so they stay phase-locked across the
+     infinite loop. */
+  #fs-landing .pac-flight {
+    position: absolute;
+    left: 0;
+    display: flex;
+    align-items: center;
+    /* Quieter than the active gameplay — Pacman is set-dressing,
+       not the headline. */
+    opacity: 0.5;
+    will-change: transform;
+    color: #ffd54f;
+  }
+  #fs-landing .pac-flight.ltr {
+    animation: fs-fly-ltr var(--speed, 20s) linear var(--delay, 0s) infinite;
+  }
+  #fs-landing .pac-flight.rtl {
+    animation: fs-fly-rtl var(--speed, 20s) linear var(--delay, 0s) infinite;
+  }
+  #fs-landing .pacman {
+    width: 24px; height: 24px;
+    background: currentColor;
+    border-radius: 50%;
+    /* Mouth wedge cut out of the right side; the wedge open angle
+       cycles via the chomp keyframe to mime the eating motion. */
+    clip-path: polygon(0 0, 100% 0, 100% 30%, 50% 50%, 100% 70%, 100% 100%, 0 100%);
+    animation: fs-pac-chomp 0.32s steps(2) infinite alternate;
+  }
+  @keyframes fs-pac-chomp {
+    from { clip-path: polygon(0 0, 100% 0, 100% 38%, 50% 50%, 100% 62%, 100% 100%, 0 100%); }
+    to   { clip-path: polygon(0 0, 100% 0, 100% 12%, 50% 50%, 100% 88%, 100% 100%, 0 100%); }
+  }
+  /* Each individual pellet. Position is set inline. The keyframe
+     name is also injected per-dot; default style is visible so dots
+     show up before Pacman reaches them on the very first cycle. */
+  #fs-landing .pac-dot {
+    position: absolute;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #ffd54f;
+    /* Baseline opacity — keyframes override per-dot to mime eating. */
+    opacity: 0.55;
+    transform: translate(-50%, -50%);
+    /* faint glow so they read on the dark page without overwhelming */
+    box-shadow: 0 0 3px rgba(255, 213, 79, 0.35);
+    will-change: opacity, transform;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #fs-landing .pac-flight,
+    #fs-landing .pacman,
+    #fs-landing .pac-dot { animation: none; }
+  }
+
   #fs-landing .topnav {
     position: relative;
     z-index: 3;
@@ -439,6 +551,154 @@ function makeStars(): HTMLElement {
   return wrap;
 }
 
+/// Pixel-art prop-plane SVG facing right (positive X). 18 wide × 10 tall
+/// in viewBox space, scaled to 20×11 in CSS for that chunky-but-readable
+/// landing-page feel. `currentColor` lets each flight pick its own hue.
+const PLANE_SVG = `
+  <svg viewBox="0 0 18 10" width="22" height="12" fill="currentColor"
+       xmlns="http://www.w3.org/2000/svg">
+    <!-- tail horizontal stabilizer -->
+    <rect x="0" y="3" width="2" height="1"/>
+    <rect x="0" y="6" width="2" height="1"/>
+    <!-- tail vertical fin -->
+    <rect x="2" y="2" width="1" height="2"/>
+    <!-- fuselage -->
+    <rect x="2" y="4" width="14" height="2"/>
+    <!-- wing perpendicular to fuselage (top + bottom from side view) -->
+    <rect x="8" y="1" width="2" height="3"/>
+    <rect x="8" y="6" width="2" height="3"/>
+    <!-- nose taper -->
+    <rect x="16" y="4" width="1" height="2"/>
+    <!-- propeller disc (vertical line at front) -->
+    <rect x="17" y="3" width="1" height="4"/>
+  </svg>
+`;
+
+/// Spawn one Pacman with a row of static pellets it eats as it flies
+/// across the page. Pellet eating is achieved via per-pellet keyframes
+/// whose "eaten" frame fires at the exact % of the cycle when Pacman's
+/// translate has him on top of that pellet — both animations share the
+/// same duration + delay so they remain phase-locked across iterations.
+function makePacman(host: HTMLElement): void {
+  const dir = Math.random() < 0.5 ? "ltr" : "rtl";
+  const D = 20 + Math.floor(Math.random() * 8);        // 20-28s flight
+  const topPct = 22 + Math.floor(Math.random() * 50);  // 22-72%
+  const startDelay = -Math.floor(Math.random() * D);   // staggered start
+  // Heading stays flat so the dots stay perfectly aligned with Pacman's
+  // path — a tilted Pacman would drift above/below the pellet row.
+
+  // Pacman wrapper — uses the same fs-fly-ltr / fs-fly-rtl keyframes
+  // the planes use, so the translate matches `-30vw → 130vw` (LTR) or
+  // `130vw → -30vw` (RTL) over duration D. The 12px upward offset
+  // (half the Pacman sprite's height) puts Pacman's CENTER on the
+  // pellet row instead of its top edge — without it the chomp lands
+  // a hair below the dots it's supposed to be eating.
+  const flight = document.createElement("div");
+  flight.className = `pac-flight ${dir}`;
+  flight.innerHTML = `<div class="pacman"></div>`;
+  flight.style.top = `calc(${topPct}% - 12px)`;
+  flight.style.setProperty("--speed", `${D}s`);
+  flight.style.setProperty("--delay", `${startDelay}s`);
+  flight.style.setProperty("--heading", "0deg");
+  host.appendChild(flight);
+
+  // Pellets — spread evenly across the viewport horizontally at the
+  // same altitude as Pacman. Quantity chosen so they read as a row.
+  const DOTS = 9;
+  // Pacman's leading edge sweeps from -30vw to 130vw over D seconds,
+  // covering 160vw of horizontal distance. Convert a pellet's `left`
+  // coordinate (in vw) into the cycle fraction where Pacman crosses it.
+  const sweep = 160;
+  const xToCycleFrac = (xVw: number) =>
+    dir === "ltr"
+      ? (xVw + 30) / sweep   // -30vw at 0, 130vw at 100%
+      : (130 - xVw) / sweep; // 130vw at 0, -30vw at 100%
+
+  // Inject a per-pellet @keyframes that holds opacity:1 until the eat
+  // moment, then drops to 0 with a tiny scale pop. Single stylesheet
+  // appended to head; one rule per pellet across this Pacman flight.
+  const styleEl = document.createElement("style");
+  let css = "";
+  // Random suffix so multiple Pacman invocations (or HMR reloads)
+  // don't collide on keyframe names.
+  const tag = Math.random().toString(36).slice(2, 8);
+
+  for (let i = 0; i < DOTS; i++) {
+    // 8-92 vw — keep pellets fully on-screen
+    const xVw = 8 + (i / (DOTS - 1)) * 84;
+    const p = xToCycleFrac(xVw);
+    // Skip pellets that would be eaten outside [0, 100%] — shouldn't
+    // happen for these vw values but defensive.
+    if (p < 0 || p > 1) continue;
+    const eatPct = (p * 100).toFixed(2);
+    const visiblePct = Math.max(0, p * 100 - 0.6).toFixed(2);
+    const eatenPct = Math.min(100, p * 100 + 0.6).toFixed(2);
+    const kf = `fs-pac-dot-${tag}-${i}`;
+    css += `
+      @keyframes ${kf} {
+        0% { opacity: 0.55; transform: translate(-50%, -50%) scale(1); }
+        ${visiblePct}% { opacity: 0.55; transform: translate(-50%, -50%) scale(1); }
+        ${eatPct}% { opacity: 0; transform: translate(-50%, -50%) scale(1.7); }
+        ${eatenPct}%, 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.7); }
+      }
+    `;
+
+    const dot = document.createElement("div");
+    dot.className = "pac-dot";
+    dot.style.left = `${xVw}vw`;
+    dot.style.top = `${topPct}%`;
+    // Same duration + delay as the Pacman flight → phase-locked.
+    dot.style.animation = `${kf} ${D}s linear ${startDelay}s infinite`;
+    host.appendChild(dot);
+  }
+  styleEl.textContent = css;
+  document.head.appendChild(styleEl);
+}
+
+function makePlanes(): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "planes";
+
+  // Seeded RNG so the flight pattern is deterministic across reloads —
+  // visitors aren't distracted by reshuffling planes mid-scroll.
+  let seed = 7;
+  const rand = () => {
+    seed = (seed * 16807) % 2147483647;
+    return seed / 2147483647;
+  };
+
+  // Palette pulled from the page's own accents so the planes feel
+  // native to the existing color story.
+  const colors = ["#f5d04b", "#7aff8e", "#ff9c5b", "#9bbcff"];
+  const COUNT = 7;
+
+  for (let i = 0; i < COUNT; i++) {
+    const flight = document.createElement("div");
+    const direction = rand() < 0.5 ? "ltr" : "rtl";
+    flight.className = `flight ${direction}`;
+    flight.innerHTML = `<div class="trail"></div><div class="plane">${PLANE_SVG}</div>`;
+    // Spread across the upper 85% of the page so planes don't cluster
+    // through the card grid at the bottom.
+    const topPct = 6 + Math.floor(rand() * 80);
+    const speedSec = 22 + Math.floor(rand() * 16); // 22-38s slow drift
+    // Negative delay puts each flight mid-route at first paint — no
+    // empty sky waiting for the first plane to enter from the edge.
+    const delaySec = -Math.floor(rand() * speedSec);
+    const trailLen = 90 + Math.floor(rand() * 80); // 90-170px
+    const color = colors[Math.floor(rand() * colors.length)];
+    const heading = (rand() * 8 - 4).toFixed(1); // -4° to +4° drift
+    flight.style.top = `${topPct}%`;
+    flight.style.color = color!;
+    flight.style.setProperty("--speed", `${speedSec}s`);
+    flight.style.setProperty("--delay", `${delaySec}s`);
+    flight.style.setProperty("--trail-len", `${trailLen}px`);
+    flight.style.setProperty("--heading", `${heading}deg`);
+    wrap.appendChild(flight);
+  }
+
+  return wrap;
+}
+
 function makeCard(g: GameEntry): HTMLElement {
   // Outer card is a div now (not an <a>) so the leaderboard link inside
   // doesn't conflict with the main card click target.
@@ -535,6 +795,9 @@ export function mountLanding(): void {
   root.id = "fs-landing";
 
   root.appendChild(makeStars());
+  const planes = makePlanes();
+  makePacman(planes); // ride in the same z-index layer as the planes
+  root.appendChild(planes);
 
   const nav = document.createElement("div");
   nav.className = "topnav";

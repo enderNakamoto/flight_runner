@@ -44,7 +44,16 @@ export const enum GameOverReason {
   WorldBottom = 8,
   FuelOut = 9,
   BannerPlane = 10,
+  /// Player crossed the SCORE_CAP — flight reached DXB. Ends the run
+  /// as a "win" rather than a crash; the outro renders the victory
+  /// template instead of the delay-slip framing.
+  ReachedDXB = 11,
 }
+
+/// Hard ceiling on score. When score crosses this value the sim ends
+/// the run with `GameOverReason.ReachedDXB`. Mirror lives in
+/// services/prover/core/src/types.rs.
+export const SCORE_CAP = 600;
 
 export interface Enemy {
   id: number;

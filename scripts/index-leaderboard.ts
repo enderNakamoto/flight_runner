@@ -128,7 +128,9 @@ async function fetchAllScores(
 function rank(rows: ScoreRow[]): ScoreRow[] {
   return [...rows].sort((a, b) => {
     if (a.entry.score !== b.entry.score) return b.entry.score - a.entry.score;
-    return a.entry.ticks_survived - b.entry.ticks_survived; // fewer ticks for same score = better efficiency
+    // Strict-PB contract preserves the first settled_at on score ties,
+    // so earlier on-chain time = higher rank when scores match.
+    return Number(a.entry.settled_at) - Number(b.entry.settled_at);
   });
 }
 

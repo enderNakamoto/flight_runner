@@ -95,6 +95,7 @@ import {
   EnemyKind,
   GameOverReason,
   MissileTier,
+  SCORE_CAP,
   type Enemy,
   type GameState,
   type PlayerInput,
@@ -119,10 +120,12 @@ function reasonForEnemy(kind: EnemyKind): GameOverReason {
 // World-speed multipliers in Q24.8: 0.5 / 1.5 / 3 → 128 / 384 / 768.
 // Default (no throttle held) was 1.0; bumped to 1.5 so the baseline
 // feels closer to the 3× right-throttle without changing the throttle
-// ceiling. Throttle boost effective ratio = 3/1.5 = 2× over default.
-const SPEED_SLOW = fp(0.5);
-const SPEED_NORMAL = fp(1.5);
-const SPEED_FAST = fp(3);
+// ceiling. Throttle boost effective ratio = 3/1.5 = 2× over default —
+// the HUD divides by SPEED_NORMAL to display this user-facing ratio
+// (so "1×" on screen = SPEED_NORMAL = fp(1.5) under the hood).
+export const SPEED_SLOW = fp(0.5);
+export const SPEED_NORMAL = fp(1.5);
+export const SPEED_FAST = fp(3);
 
 function computeSpeedMul(buttons: number): number {
   const left = (buttons & BTN_LEFT) !== 0;
@@ -551,6 +554,17 @@ export function stepMut(state: GameState, input: PlayerInput): void {
     if (ns.pillarsEnabled) state.nextPillarDistance = state.worldDistance + ns.pillarSpawnPeriod;
     if (ns.enemySpawnPeriod > 0) state.nextEnemyDistance = state.worldDistance + ns.enemySpawnPeriod;
     if (ns.fuelEnabled) state.nextFuelDistance = state.worldDistance + ns.fuelSpawnPeriod;
+  }
+
+  // ---- Score cap ----
+  // Reaching SCORE_CAP ends the run with a "win" outcome — the player
+  // landed in DXB. Capped so the HUD reads exactly the ceiling rather
+  // than the over-the-line tick. Runs that already ended for another
+  // reason this tick keep their original game-over reason.
+  if (!state.gameOver && state.score >= SCORE_CAP) {
+    state.score = SCORE_CAP;
+    state.gameOver = true;
+    state.gameOverReason = GameOverReason.ReachedDXB;
   }
 }
 

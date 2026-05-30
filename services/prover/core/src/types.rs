@@ -58,7 +58,16 @@ pub enum GameOverReason {
     WorldBottom = 8,
     FuelOut = 9,
     BannerPlane = 10,
+    /// Player crossed `SCORE_CAP` — flight reached DXB. Ends the run
+    /// as a "win" rather than a crash; the web UI's outro renders the
+    /// victory template instead of the delay-slip framing.
+    ReachedDXB = 11,
 }
+
+/// Hard ceiling on score. When score crosses this value the sim ends
+/// the run with `GameOverReason::ReachedDXB`. Mirror lives in
+/// packages/sim/src/types.ts.
+pub const SCORE_CAP: u32 = 600;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Enemy {
@@ -157,6 +166,7 @@ mod tests {
         assert_eq!(GameOverReason::WorldBottom as u8, 8);
         assert_eq!(GameOverReason::FuelOut as u8, 9);
         assert_eq!(GameOverReason::BannerPlane as u8, 10);
+        assert_eq!(GameOverReason::ReachedDXB as u8, 11);
     }
 
     #[test]

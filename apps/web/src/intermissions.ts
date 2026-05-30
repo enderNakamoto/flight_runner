@@ -38,9 +38,9 @@ export const INTERMISSIONS: Record<Stage, IntermissionCopy | null> = {
   [Stage.Legendary]: {
     title: "MILITARY ESCALATION",
     body: [
-      "RAF and Tehran fighters scrambling",
-      "near the Iraqi border. Jets are fast",
-      "and they shoot back.",
+      "IDF and USAF squadrons scrambling",
+      "for air supremacy over the corridor.",
+      "Jets are fast and they shoot back.",
       "",
       "FUEL RATIONING IN EFFECT.",
       "The birds have turned back.",

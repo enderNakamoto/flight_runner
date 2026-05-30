@@ -44,6 +44,7 @@ import {
   PLANE_DISPLAY_W,
   PLANE_HITBOX_PARTS,
   PLANE_X,
+  SPEED_NORMAL,
   STAGE_NAMES,
   STAGE_TABLE,
   Stage,
@@ -57,6 +58,7 @@ import {
   createInitialState,
   encodeTranscript,
   fpToFloat,
+  GameOverReason,
   stepMut,
   type GameState,
 } from "@flight/sim";
@@ -490,7 +492,7 @@ export class PlayScene extends Phaser.Scene {
 
     // Sub-tagline — the joke landing.
     this.spSubTagline = this.add
-      .text(WORLD_WIDTH / 2, 480, "if you'd hedged your bets with Sentinel.  maybe next time.", {
+      .text(WORLD_WIDTH / 2, 480, "if you had delay insurance on trysentinel.xyz.  maybe next time.", {
         fontFamily: "ui-monospace, Menlo, monospace",
         fontSize: "18px",
         color: "#e0e0e0",
@@ -803,7 +805,7 @@ export class PlayScene extends Phaser.Scene {
     //   ~120 interTitle    FLIGHT DIVERTED
     //   ~180 interBody     diversion reason copy (typewriter)
     //   ~430 spTagline     DELAY WOULD HAVE BEEN COVERED
-    //   ~480 spSubTagline  "if you'd hedged your bets..."
+    //   ~480 spSubTagline  "if you had delay insurance on trysentinel.xyz..."
     //   ~530 interCountdown  SCORE x  BEST y  (moved up — was 670)
     //   ~565 interHint       R restart        (moved up — was 700)
     //   ~580–680 DOM submit button + caption sit here (bottom-anchored)
@@ -831,10 +833,22 @@ export class PlayScene extends Phaser.Scene {
     // The single floating DOM button (apps/web/src/ui/submit-ui.ts) is the
     // CTA — handles both submit-on-PB and Sentinel-on-non-PB; no Phaser-
     // canvas CTA fights for the player's eye.
-    this.spHeader.setText("SENTINEL PROTOCOL  //  DELAY NOTIFICATION").setVisible(true);
-    this.spDivider.setVisible(true);
-    this.spTagline.setVisible(true);
-    this.spSubTagline.setVisible(true);
+    //
+    // ReachedDXB is a win, not a diversion — suppress the Sentinel
+    // delay-slip framing so the screen reads as a landing instead of
+    // an insurance claim.
+    const isReachedDxb = this.state.gameOverReason === GameOverReason.ReachedDXB;
+    if (isReachedDxb) {
+      this.spHeader.setText("FLIGHT COMPLETE  //  ARRIVAL CONFIRMED").setVisible(true);
+      this.spDivider.setVisible(true);
+      this.spTagline.setText("✈ LANDED IN DXB").setVisible(true);
+      this.spSubTagline.setText("ceiling cleared — the leaderboard remembers who got here first.").setVisible(true);
+    } else {
+      this.spHeader.setText("SENTINEL PROTOCOL  //  DELAY NOTIFICATION").setVisible(true);
+      this.spDivider.setVisible(true);
+      this.spTagline.setText("DELAY WOULD HAVE BEEN COVERED").setVisible(true);
+      this.spSubTagline.setText("if you had delay insurance on trysentinel.xyz.  maybe next time.").setVisible(true);
+    }
 
     // SKIP button — in outro it functions as "restart now"
     this.skipBtnBg.setVisible(true);
@@ -918,14 +932,14 @@ export class PlayScene extends Phaser.Scene {
 
     // Plane smoke trail — anchored to plane tail (left side, plane faces
     // right) and rotated with the plane; alpha eases on while → is held
-    // (worldSpeedMul > 1) and off otherwise.
+    // (worldSpeedMul > SPEED_NORMAL) and off otherwise.
     {
       const angle = this.planeSprite.rotation;
       const tailOffX = -130;
       this.planeSmokeSprite.x = this.planeSprite.x + tailOffX * Math.cos(angle);
       this.planeSmokeSprite.y = this.planeSprite.y + tailOffX * Math.sin(angle);
       this.planeSmokeSprite.setRotation(angle);
-      const boosting = this.phase === "playing" && fpToFloat(this.state.worldSpeedMul) > 1.01;
+      const boosting = this.phase === "playing" && this.state.worldSpeedMul > SPEED_NORMAL;
       const targetAlpha = boosting ? 1 : 0;
       this.planeSmokeSprite.alpha = Phaser.Math.Linear(this.planeSmokeSprite.alpha, targetAlpha, 0.18);
     }
@@ -980,7 +994,7 @@ export class PlayScene extends Phaser.Scene {
       }
       sprite.x = ex; sprite.y = ey;
 
-      // Banner-tow trail — SENTINEL.XYZ banner pulled behind the propeller
+      // Banner-tow trail — TRYSENTINEL.XYZ banner pulled behind the propeller
       // plane via a short cord. Plane faces left (moving left), so the banner
       // trails to the right with a slight downward droop.
       if (e.kind === EnemyKind.BannerPlane) {
@@ -988,11 +1002,11 @@ export class PlayScene extends Phaser.Scene {
         if (!parts) {
           const cord = this.add.rectangle(0, 0, 28, 2, 0x333333).setDepth(4);
           const banner = this.add
-            .rectangle(0, 0, 150, 30, 0xc62828)
+            .rectangle(0, 0, 195, 30, 0xc62828)
             .setDepth(4)
             .setStrokeStyle(2, 0xffd54f);
           const text = this.add
-            .text(0, 0, "SENTINEL.XYZ", {
+            .text(0, 0, "TRYSENTINEL.XYZ", {
               fontFamily: "ui-monospace, Menlo, monospace",
               fontSize: "18px",
               color: "#ffffff",
@@ -1009,7 +1023,7 @@ export class PlayScene extends Phaser.Scene {
         const droopY = ey + 14;
         parts.cord.x = tailX + 14;
         parts.cord.y = (ey + droopY) / 2;
-        parts.banner.x = tailX + 28 + 75; // cord length + half banner width
+        parts.banner.x = tailX + 28 + 98; // cord length + half banner width (195/2)
         parts.banner.y = droopY;
         parts.text.x = parts.banner.x;
         parts.text.y = parts.banner.y;
@@ -1147,12 +1161,14 @@ export class PlayScene extends Phaser.Scene {
     this.scoreText.setText(String(this.state.score));
     this.bestText.setText(this.formatBest());
 
-    // Speed indicator
+    // Speed indicator — normalized so the on-screen number reads as a
+    // ratio of the default cruising speed. Default = 1×, right-throttle
+    // = 2× (SPEED_FAST / SPEED_NORMAL), left-throttle ≈ 0.3×.
     if (this.phase === "playing") {
-      const m = fpToFloat(this.state.worldSpeedMul);
+      const m = fpToFloat(this.state.worldSpeedMul) / fpToFloat(SPEED_NORMAL);
       if (m > 1.01) this.speedText.setText(`▶▶  ${m.toFixed(1)}×`);
       else if (m < 0.99) this.speedText.setText(`◀  ${m.toFixed(1)}×`);
-      else this.speedText.setText("");
+      else this.speedText.setText("1×");
     } else {
       this.speedText.setText("");
     }

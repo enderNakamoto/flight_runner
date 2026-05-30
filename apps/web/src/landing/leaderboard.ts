@@ -599,7 +599,8 @@ function mergeLiveIntoSnapshot(
   const merged = [...others, userRow]
     .sort((a, b) => {
       if (a.score !== b.score) return b.score - a.score;
-      return a.ticks_survived - b.ticks_survived;
+      // Strict-PB ranking: at the same score, earlier on-chain time wins.
+      return a.settled_at - b.settled_at;
     })
     .slice(0, snap.top_n)
     .map((e, i) => ({ ...e, rank: i + 1 }));

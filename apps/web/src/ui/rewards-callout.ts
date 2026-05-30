@@ -72,7 +72,7 @@ const CHEST_SVG = `
   </svg>
 `;
 
-const COPY = `<strong>Just play and have fun.</strong> Every score you post counts — we'll sync your rewards to you at <strong>Sentinel launch</strong>.`;
+const COPY = `<strong>Just play and have fun.</strong> Every score you post counts — your rewards stay synced to <strong>Sentinel points</strong> for as long as you keep playing from the <strong>same wallet</strong>.`;
 
 export function injectRewardsCalloutStyle(): void {
   if (document.getElementById("fs-rewards-callout-style")) return;

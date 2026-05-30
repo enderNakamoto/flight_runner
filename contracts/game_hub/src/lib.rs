@@ -205,9 +205,14 @@ fn record_journal_state(env: &Env, game_id: u32, journal: &Bytes) {
     // ── HighScore update ──────────────────────────────────────────────
     let hs_key = DataKey::HighScore(game_id, player_pubkey.clone());
     let existing: Option<HighScoreEntry> = env.storage().persistent().get(&hs_key);
+    // Strict-score comparison: a tie does NOT replace the existing entry,
+    // preserving the *first* settled_at timestamp. The leaderboard sorts
+    // `(score DESC, settled_at ASC)` so the earlier submission wins ties
+    // on the global ranking. Ticks survived is still stored for display
+    // but no longer participates in the PB-replace decision.
     let is_pb = match &existing {
         None => true,
-        Some(old) => score > old.score || (score == old.score && ticks > old.ticks_survived),
+        Some(old) => score > old.score,
     };
     if is_pb {
         let entry = HighScoreEntry {
@@ -362,6 +367,24 @@ impl GameHub {
         env.storage().instance().get(&DataKey::TrustedOperator)
     }
 
+    /// Replace the contract's running wasm with `new_wasm_hash`. The
+    /// hash must already be uploaded to the network via
+    /// `stellar contract upload`. Admin-only — same auth gate as every
+    /// other set_* function. State storage is preserved across the
+    /// upgrade (admin, verifier, trusted_operator, HighScore, etc.);
+    /// only the executable bytes swap. Future ranking / entrypoint
+    /// tweaks ship as upgrades instead of fresh deploys + frontend
+    /// contract-id rotations.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), Error> {
+        let admin = require_admin(&env)?;
+        admin.require_auth();
+        let old = env.current_contract_address();
+        env.deployer().update_current_contract_wasm(new_wasm_hash.clone());
+        env.events()
+            .publish((symbol_short!("upgrade"),), (old, new_wasm_hash));
+        Ok(())
+    }
+
     // ── Score submission (permissionless) ────────────────────────────────
 
     /// Verify a RISC Zero proof and conditionally update the committed
@@ -369,9 +392,11 @@ impl GameHub {
     /// score to a specific 32-byte pubkey, and the score is always
     /// credited there. Anyone (player, relay, friend) can pay the gas.
     ///
-    /// PB updates only when `(score, ticks_survived)` strictly exceeds
-    /// the existing entry (ties broken by ticks). Lower scores are
-    /// silently kept-out and save the storage write.
+    /// PB updates only when `score` is **strictly greater** than the
+    /// existing entry. Ties (including same-score replays) preserve the
+    /// original `settled_at` timestamp — the leaderboard sorts
+    /// `(score DESC, settled_at ASC)` so being the first to reach a
+    /// score holds the higher rank on ties.
     ///
     /// Enumeration: on a player's first ever submission for this game,
     /// they're added to the indexed `PlayerByIndex` table — unless that

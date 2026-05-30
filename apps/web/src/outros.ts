@@ -22,6 +22,7 @@ export const REASON_TAG: Record<GameOverReason, string> = {
   [GameOverReason.WorldBottom]: "Terrain warning",
   [GameOverReason.FuelOut]:     "Fuel emergency",
   [GameOverReason.BannerPlane]: "Banner-tow collision",
+  [GameOverReason.ReachedDXB]:  "Landed in DXB",
 };
 
 // Sentinel Protocol product page. The outro CTA opens this with the run's
@@ -137,6 +138,22 @@ export const OUTROS: Record<GameOverReason, OutroCopy> = {
       "",
       "Diverting to the nearest airport",
       "for cable extraction and inspection.",
+    ],
+  },
+  /// "Win" outcome — player reached the SCORE_CAP. Title flips from
+  /// FLIGHT DIVERTED to a landed-safely framing. The body intentionally
+  /// drops the "Sentinel Protocol delay slip" theme because there's no
+  /// delay to insure against — they made it.
+  [GameOverReason.ReachedDXB]: {
+    title: "REACHED DXB",
+    body: [
+      "Against all odds, you crossed the Gulf",
+      "and put the wheels down in Dubai.",
+      "",
+      "Storm behind you. Fighters behind you.",
+      "Birds, drones, jets, UFOs — all behind you.",
+      "",
+      "Welcome to the ceiling of this game.",
     ],
   },
 };

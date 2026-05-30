@@ -85,7 +85,7 @@ pub static STAGE_TABLE: &[StageParams] = &[
         pillar_gap: 0,
         scroll_speed: fp(2.75),
         fuel_enabled: true,
-        fuel_drain_per_tick: fp(0.04),
+        fuel_drain_per_tick: fp(0.048),  // +20% over original 0.04
         fuel_spawn_period: fp(320.0),
         enemy_spawn_period: fp(150.0),
         enemy_mask: ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG | ENEMY_BANNER_PLANE,
@@ -104,7 +104,7 @@ pub static STAGE_TABLE: &[StageParams] = &[
         pillar_gap: 220,
         scroll_speed: fp(3.0),
         fuel_enabled: true,
-        fuel_drain_per_tick: fp(0.05),
+        fuel_drain_per_tick: fp(0.06),   // +20% over original 0.05
         fuel_spawn_period: fp(340.0),
         enemy_spawn_period: fp(220.0),
         enemy_mask: ENEMY_BIRD_SMALL | ENEMY_BIRD_BIG | ENEMY_DRONE | ENEMY_BANNER_PLANE,
@@ -123,7 +123,7 @@ pub static STAGE_TABLE: &[StageParams] = &[
         pillar_gap: 200,
         scroll_speed: fp(3.25),
         fuel_enabled: true,
-        fuel_drain_per_tick: fp(0.06),
+        fuel_drain_per_tick: fp(0.072),  // +20% over original 0.06
         fuel_spawn_period: fp(450.0),
         enemy_spawn_period: fp(180.0),
         enemy_mask: ENEMY_DRONE | ENEMY_JET | ENEMY_BANNER_PLANE,
@@ -142,7 +142,7 @@ pub static STAGE_TABLE: &[StageParams] = &[
         pillar_gap: 180,
         scroll_speed: fp(3.5),
         fuel_enabled: true,
-        fuel_drain_per_tick: fp(0.07),
+        fuel_drain_per_tick: fp(0.084),  // +20% over original 0.07
         fuel_spawn_period: fp(700.0),
         enemy_spawn_period: fp(140.0),
         enemy_mask: ENEMY_DRONE | ENEMY_JET | ENEMY_UFO | ENEMY_BANNER_PLANE,
@@ -203,11 +203,12 @@ mod tests {
         assert_eq!(STAGE_TABLE[4].pillar_spawn_period, 320 * 256);
 
         // Fuel drains — truncation matters, pinning the Q24.8 ints not the floats.
+        // Values bumped +20% per stage from the original tuning.
         assert_eq!(STAGE_TABLE[0].fuel_drain_per_tick, 0);
-        assert_eq!(STAGE_TABLE[1].fuel_drain_per_tick, 10);   // fp(0.04) = 10 (rep. 0.0390625)
-        assert_eq!(STAGE_TABLE[2].fuel_drain_per_tick, 12);   // fp(0.05) = 12 (rep. 0.046875)
-        assert_eq!(STAGE_TABLE[3].fuel_drain_per_tick, 15);   // fp(0.06) = 15 (rep. 0.0585...)
-        assert_eq!(STAGE_TABLE[4].fuel_drain_per_tick, 17);   // fp(0.07) = 17 (rep. 0.0664...)
+        assert_eq!(STAGE_TABLE[1].fuel_drain_per_tick, 12);   // fp(0.048) = 12 (rep. 0.046875)
+        assert_eq!(STAGE_TABLE[2].fuel_drain_per_tick, 15);   // fp(0.06)  = 15 (rep. 0.0585...)
+        assert_eq!(STAGE_TABLE[3].fuel_drain_per_tick, 18);   // fp(0.072) = 18 (rep. 0.0703125)
+        assert_eq!(STAGE_TABLE[4].fuel_drain_per_tick, 21);   // fp(0.084) = 21 (rep. 0.08203125)
 
         // Bird speeds.
         assert_eq!(STAGE_TABLE[0].bird_small_speed, 921);   // fp(3.6)
