@@ -244,6 +244,98 @@ const STYLE = `
     50%      { opacity: 1;   transform: translateY(-50%) rotate(180deg) translateX(5px); }
   }
 
+  /* "Behind the scenes" — three backends. */
+  #fs-how .backends {
+    margin: 40px auto 24px;
+    max-width: 760px;
+  }
+  #fs-how .backends-head {
+    text-align: center;
+    margin-bottom: 18px;
+  }
+  #fs-how .backends-head h2 {
+    font-family: var(--font-pixel);
+    font-size: 16px;
+    color: var(--accent);
+    margin: 0 0 6px;
+    letter-spacing: 0.5px;
+  }
+  #fs-how .backends-head .sub {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  #fs-how .backend {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+  #fs-how .backend[open] {
+    border-color: var(--border-bright);
+  }
+  #fs-how .backend summary {
+    cursor: pointer;
+    padding: 14px 18px;
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    user-select: none;
+  }
+  #fs-how .backend summary::-webkit-details-marker { display: none; }
+  #fs-how .backend summary .left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  #fs-how .backend summary .caret {
+    color: var(--muted);
+    font-family: var(--font-pixel);
+    font-size: 10px;
+    width: 14px;
+  }
+  #fs-how .backend[open] summary .caret { color: var(--accent); }
+  #fs-how .backend summary .label {
+    font-family: var(--font-pixel);
+    font-size: 12px;
+    letter-spacing: 0.5px;
+  }
+  #fs-how .backend summary .tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  #fs-how .backend summary .pill {
+    font-size: 10px;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 2px 7px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  #fs-how .backend summary .pill.live {
+    color: #7aff8e;
+    border-color: #7aff8e;
+  }
+  #fs-how .backend .body {
+    padding: 6px 18px 18px;
+    color: #d0d8ee;
+    font-size: 13px;
+    line-height: 1.7;
+    border-top: 1px dashed var(--border);
+  }
+  #fs-how .backend .body p { margin: 10px 0; }
+  #fs-how .backend .body strong { color: #fff; }
+  #fs-how .backend .body .when {
+    color: var(--accent);
+    font-size: 12px;
+    margin-top: 12px;
+  }
+
   /* "Verified" stamp */
   #fs-how .verdict {
     margin-top: 8px;
@@ -408,6 +500,7 @@ export function mountHowItWorks(): void {
   root.innerHTML = `
     <div class="topnav">
       <a href="/">← BACK TO ARCADE</a>
+      <a href="/contracts">📜 contracts</a>
       <a href="/leaderboard">📊 leaderboards</a>
     </div>
     <div class="inner">
@@ -417,11 +510,11 @@ export function mountHowItWorks(): void {
       <div class="intro">
         You play in your browser like any other web game — no special hardware,
         no slow chain calls during play. When a run is worth keeping, the same
-        sim that ran in your browser <strong>replays your exact inputs</strong>
-        inside a zero-knowledge prover, which produces a small mathematical
-        receipt: <em>this run was executed honestly and ended with this score.</em>
-        That receipt is verified on chain. The leaderboard you see isn't claimed
-        — it's <strong>proven</strong>.
+        deterministic sim that ran in your browser <strong>replays your exact
+        inputs</strong> on the relay, producing a receipt: <em>this run was
+        executed honestly and ended with this score.</em> The receipt lands on
+        chain. The leaderboard you see isn't claimed — it's <strong>checked</strong>.
+        Three different backends can produce that receipt (see "Behind the scenes" below).
       </div>
 
       <div class="sky">
@@ -459,6 +552,84 @@ export function mountHowItWorks(): void {
           <p>A verifier contract checks the proof. Your score lands publicly.</p>
           <span class="tag">stellar soroban</span>
         </div>
+      </div>
+
+      <div class="backends">
+        <div class="backends-head">
+          <h2>BEHIND THE SCENES</h2>
+          <div class="sub">The arcade can run the proving step in three different ways. Flip is one config; same contract serves all three.</div>
+        </div>
+
+        <details class="backend" open>
+          <summary>
+            <span class="left">
+              <span class="caret">▼</span>
+              <span class="label">🤝 ATTEST MODE</span>
+            </span>
+            <span class="tags">
+              <span class="pill live">active</span>
+              <span class="pill">~2s</span>
+              <span class="pill">no per-proof cost</span>
+            </span>
+          </summary>
+          <div class="body">
+            <p>The relay re-runs your transcript through the same deterministic Rust simulation
+            that a zero-knowledge prover would, computes the final score, and <strong>signs the
+            result with a trusted operator key</strong>. The browser submits that signed
+            payload via <code>settle_attested</code>. The contract verifies the signature
+            against an on-chain operator address — no zero-knowledge proof, no marketplace.</p>
+            <p><strong>Trust model:</strong> the relay is the oracle. The deterministic
+            sim means a tampered browser can't fake a score (the relay independently
+            recomputes from your raw inputs), but a malicious operator could in principle
+            sign for a score that never happened. The operator key rotates via an admin
+            call if ever compromised.</p>
+            <p class="when">Best when speed matters more than cryptographic neutrality. Currently the default.</p>
+          </div>
+        </details>
+
+        <details class="backend">
+          <summary>
+            <span class="left">
+              <span class="caret">▶</span>
+              <span class="label">🌐 BOUNDLESS MARKETPLACE</span>
+            </span>
+            <span class="tags">
+              <span class="pill">5–25 min</span>
+              <span class="pill">~$0.03–$0.07 / proof</span>
+            </span>
+          </summary>
+          <div class="body">
+            <p>The relay submits your transcript to a <strong>decentralized prover marketplace</strong>.
+            An independent prover picks it up, runs the full RISC Zero STARK over your run,
+            wraps it in a Groth16 SNARK, and returns a 260-byte seal. The browser submits via
+            <code>submit_score</code>; the contract verifies the seal cryptographically.</p>
+            <p><strong>Trust model:</strong> pure math. No party — relay, prover, or operator —
+            can fake a score because the on-chain verifier checks the proof directly.</p>
+            <p class="when">Best when ZK guarantees matter and a few-minute wait is acceptable. Pay per proof.</p>
+          </div>
+        </details>
+
+        <details class="backend">
+          <summary>
+            <span class="left">
+              <span class="caret">▶</span>
+              <span class="label">🖥️ SELF-HOSTED VPS</span>
+            </span>
+            <span class="tags">
+              <span class="pill">10–15 min</span>
+              <span class="pill">VPS hosting</span>
+            </span>
+          </summary>
+          <div class="body">
+            <p>Same STARK + Groth16 pipeline as Boundless, but the prover runs <strong>directly on
+            the relay's own VPS</strong> instead of a marketplace. The relay produces the same
+            260-byte seal, the browser submits the same <code>submit_score</code> call, the
+            contract verifies the same way.</p>
+            <p><strong>Trust model:</strong> identical to Boundless — pure math via the on-chain
+            verifier. You pay flat VPS hosting instead of per-proof fees.</p>
+            <p class="when">Best when you want ZK guarantees, control over the prover stack, and predictable monthly cost.</p>
+          </div>
+        </details>
       </div>
 
       <div class="verdict">

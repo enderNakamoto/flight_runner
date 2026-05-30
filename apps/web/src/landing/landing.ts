@@ -542,6 +542,7 @@ export function mountLanding(): void {
     <div class="left">
       <a class="link" href="/leaderboard">📊 LEADERBOARDS</a>
       <a class="link" href="/how-it-works">⚙️ HOW IT WORKS</a>
+      <a class="link" href="/contracts">📜 CONTRACTS</a>
     </div>
     <div class="right" id="fs-topnav-wallet"></div>
   `;

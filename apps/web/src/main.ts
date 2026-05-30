@@ -11,6 +11,7 @@ import Phaser from "phaser";
 import { WORLD_HEIGHT, WORLD_WIDTH } from "@flight/sim";
 import { startScoreSync } from "./chain/score-sync.js";
 import { restoreWallet } from "./chain/wallet.js";
+import { mountContracts } from "./landing/contracts.js";
 import { findGame } from "./landing/games.js";
 import { mountHowItWorks } from "./landing/how-it-works.js";
 import { mountLanding } from "./landing/landing.js";
@@ -55,6 +56,8 @@ if (segments.length === 0) {
   mountAllLeaderboards();
 } else if (segments.length === 1 && segments[0] === "how-it-works") {
   mountHowItWorks();
+} else if (segments.length === 1 && segments[0] === "contracts") {
+  mountContracts();
 } else if (segments.length === 1) {
   const game = findGame(segments[0]!);
   if (game && game.status === "live") bootGame();

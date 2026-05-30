@@ -116,9 +116,12 @@ function reasonForEnemy(kind: EnemyKind): GameOverReason {
   }
 }
 
-// World-speed multipliers in Q24.8: 0.5 / 1 / 3 → 128 / 256 / 768.
+// World-speed multipliers in Q24.8: 0.5 / 1.5 / 3 → 128 / 384 / 768.
+// Default (no throttle held) was 1.0; bumped to 1.5 so the baseline
+// feels closer to the 3× right-throttle without changing the throttle
+// ceiling. Throttle boost effective ratio = 3/1.5 = 2× over default.
 const SPEED_SLOW = fp(0.5);
-const SPEED_NORMAL = fp(1);
+const SPEED_NORMAL = fp(1.5);
 const SPEED_FAST = fp(3);
 
 function computeSpeedMul(buttons: number): number {
