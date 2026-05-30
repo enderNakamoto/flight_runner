@@ -186,11 +186,29 @@ impl std::error::Error for StreamError {}
 
 const VALID_BUTTON_MASK: u8 = 0b0000_1111;
 
+/// Replay a transcript end-to-end and return the resulting state. Used
+/// by the relay's `flight-replay` binary to independently re-derive a
+/// player's score from their raw inputs.
+///
+/// **Anti-cheat invariant — DO NOT CHANGE THE START STAGE.** The
+/// hardcoded `Stage::Common` below is the load-bearing line that stops
+/// a browser-side `?stage=N` cheat from translating into an on-chain
+/// score. The transcript carries only `(seed, buttons)`; nothing in the
+/// wire format says which stage the player started in. Whatever the
+/// player saw in their browser, this function always replays from
+/// Stage::Common and progresses through stages only when the natural
+/// score gates are crossed during the run. A cheater who recorded
+/// gameplay at Stage::Mythical (`?stage=4`) submits a transcript whose
+/// inputs would have been "easy" against Mythical's faster scroll and
+/// missile cadence — replayed at Common they crash on a bird in seconds.
+/// The on-chain score is whatever this function says, not what the
+/// browser claimed.
 pub fn run_streaming(
     raw_bytes: &[u8],
     player_pubkey: [u8; 32],
 ) -> Result<StreamResult, StreamError> {
     let decoded = decode_transcript(raw_bytes).map_err(StreamError::BadTranscript)?;
+    // ── ANTI-CHEAT LINE — see fn-level doc above ─────────────────────
     let mut state: GameState = create_initial_state(decoded.seed, Stage::Common);
     for (i, &b) in decoded.buttons.iter().enumerate() {
         if b & !VALID_BUTTON_MASK != 0 {
@@ -217,7 +235,7 @@ pub fn run_streaming(
 mod run_streaming_tests {
     use super::*;
     use crate::transcript::encode_transcript;
-    use crate::types::BTN_UP;
+    use crate::types::{BTN_RIGHT, BTN_UP};
 
     const TEST_PK: [u8; 32] = [0x11; 32];
 
@@ -255,5 +273,45 @@ mod run_streaming_tests {
     fn rejects_short_transcript() {
         let err = run_streaming(&[0u8, 1], TEST_PK).unwrap_err();
         assert!(matches!(err, StreamError::BadTranscript(_)));
+    }
+
+    /// **Anti-cheat invariant #1 — start stage is pinned.** No matter
+    /// what seed or input sequence the transcript carries,
+    /// `run_streaming` must initialise `state.stage` to `Stage::Common`.
+    /// The browser-side `?stage=N` cheat works by *appearing* to start
+    /// the player in a later stage; this test stops a future refactor
+    /// from routing the caller's choice through to the relay's sim.
+    #[test]
+    fn run_streaming_starts_at_stage_common() {
+        let buf = encode_transcript(1, &[]);
+        let r = run_streaming(&buf, TEST_PK).unwrap();
+        assert_eq!(r.state.stage, Stage::Common as u8);
+    }
+
+    /// **Anti-cheat invariant #2 — relay matches an honest replay.**
+    /// `run_streaming` and a direct `replay(buf, Stage::Common)` MUST
+    /// produce identical end-state for the same input. If they ever
+    /// diverge, the relay's score will differ from what a fresh,
+    /// uncompromised browser would render at Common — opening either
+    /// a cheat surface or a "my score didn't land" UX regression.
+    #[test]
+    fn run_streaming_matches_honest_common_replay() {
+        use crate::transcript::replay;
+
+        let seed = 0xCAFEBABEu32 as i32;
+        let mut buttons: Vec<u8> = Vec::with_capacity(160);
+        for i in 0..160 {
+            buttons.push(if i % 4 == 0 { 0 } else { BTN_RIGHT });
+        }
+        let buf = encode_transcript(seed, &buttons);
+
+        let streamed = run_streaming(&buf, TEST_PK).unwrap();
+        let honest = replay(&buf, Stage::Common).unwrap();
+
+        assert_eq!(streamed.state.score, honest.state.score);
+        assert_eq!(streamed.state.tick, honest.state.tick);
+        assert_eq!(streamed.state.game_over, honest.state.game_over);
+        assert_eq!(streamed.state.game_over_reason, honest.state.game_over_reason);
+        assert_eq!(streamed.state.stage, honest.state.stage);
     }
 }

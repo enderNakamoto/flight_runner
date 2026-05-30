@@ -55,7 +55,7 @@ jobs:
 
       - name: refresh leaderboard snapshot
         env:
-          GAME_HUB_ID: CDCYHA36MQRFM4J25B3EQKIWM27E3DUW6W3W6FLWJD7T7ZVNBVAUSMYW
+          GAME_HUB_ID: CCEXYEIJK3JSN35F3CFE4Y7SAPUNIFHDMSKBBAWLKL2GSMRTYFUJCGYN
           RPC_URL: https://soroban-testnet.stellar.org
           NETWORK_PASSPHRASE: 'Test SDF Network ; September 2015'
         run: pnpm index:leaderboard

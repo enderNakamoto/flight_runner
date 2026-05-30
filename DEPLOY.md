@@ -62,8 +62,10 @@ vercel login
 vercel link
 
 # Set env vars (production):
-vercel env add VITE_GAME_HUB_CONTRACT_ID production
-# paste: CALPEUANXSCROTCZCTSGP6HKRPF5HE5W43JUWQG6ZRIWMRLANAU2N6YO
+# IMPORTANT: pipe via `printf` (no echo) — echo appends \n which Vercel
+# stores verbatim; the embedded newline silently breaks StrKey checks.
+printf "CCEXYEIJK3JSN35F3CFE4Y7SAPUNIFHDMSKBBAWLKL2GSMRTYFUJCGYN" | vercel env add VITE_GAME_HUB_CONTRACT_ID production
+# (or paste interactively: CCEXYEIJK3JSN35F3CFE4Y7SAPUNIFHDMSKBBAWLKL2GSMRTYFUJCGYN)
 
 vercel env add VITE_STELLAR_RPC_URL production
 # paste: https://soroban-testnet.stellar.org

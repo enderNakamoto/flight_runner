@@ -121,6 +121,60 @@ function startStageFromUrl(): Stage {
   return n as Stage;
 }
 
+/// `?intermission=N` or `?intro=N` (1–4) — preview the stage-transition
+/// briefing for that stage without playing through the score gate. Also
+/// accepts case-insensitive names: `uncommon`, `rare`, `legendary`,
+/// `mythical`. Stage.Common (0) has no briefing and is rejected.
+function intermissionFromUrl(): Stage | null {
+  const raw = getParam("intermission") ?? getParam("intro");
+  if (raw === null) return null;
+  const n = Number.parseInt(raw, 10);
+  if (Number.isFinite(n) && n >= 1 && n <= 4) return n as Stage;
+  const map: Record<string, Stage> = {
+    uncommon: Stage.Uncommon,
+    rare: Stage.Rare,
+    legendary: Stage.Legendary,
+    mythical: Stage.Mythical,
+    // Title-keyword aliases for ergonomics
+    dusk: Stage.Uncommon,
+    contested: Stage.Rare,
+    military: Stage.Legendary,
+    unidentified: Stage.Mythical,
+  };
+  return map[raw.toLowerCase()] ?? null;
+}
+
+/// `?outro=N` (numeric u8) or `?outro=<name>` (case-insensitive: `bird`,
+/// `drone`, `jet`, `ufo`, `missile`, `pillar`, `worldtop`, `worldbottom`,
+/// `fuelout`, `bannerplane`, `reacheddxb` / `dxb`) — when set, the scene
+/// skips play entirely and renders the matching game-over outro screen.
+/// Lets us QA every outro template without playing through the run that
+/// would normally trigger it.
+function outroFromUrl(): GameOverReason | null {
+  const raw = getParam("outro");
+  if (raw === null) return null;
+  const n = Number.parseInt(raw, 10);
+  if (Number.isFinite(n) && n >= 0 && n <= 11) return n as GameOverReason;
+  const map: Record<string, GameOverReason> = {
+    unknown: GameOverReason.Unknown,
+    bird: GameOverReason.Bird,
+    drone: GameOverReason.Drone,
+    jet: GameOverReason.Jet,
+    ufo: GameOverReason.Ufo,
+    missile: GameOverReason.Missile,
+    pillar: GameOverReason.Pillar,
+    worldtop: GameOverReason.WorldTop,
+    worldbottom: GameOverReason.WorldBottom,
+    fuelout: GameOverReason.FuelOut,
+    bannerplane: GameOverReason.BannerPlane,
+    bannerplane2: GameOverReason.BannerPlane,
+    reacheddxb: GameOverReason.ReachedDXB,
+    dxb: GameOverReason.ReachedDXB,
+    win: GameOverReason.ReachedDXB,
+  };
+  return map[raw.toLowerCase()] ?? null;
+}
+
 interface EnemySpec {
   displayW: number; displayH: number;
   hitboxW: number; hitboxH: number;
@@ -597,6 +651,34 @@ export class PlayScene extends Phaser.Scene {
           WORLD_WIDTH, WORLD_HEIGHT,
         }),
       };
+    }
+
+    // ?outro=N URL hatch — preview any game-over outro without
+    // playing through. Synthesises a plausible game-over state
+    // (DXB sets score to the cap, others use a mid-run sample) and
+    // jumps straight to the gameOver phase. Set AFTER the canvas
+    // widgets are wired up so showOutro() has everything it needs.
+    const previewReason = outroFromUrl();
+    if (previewReason !== null) {
+      this.state.gameOverReason = previewReason;
+      this.state.gameOver = true;
+      this.state.score = previewReason === GameOverReason.ReachedDXB ? 600 : 120;
+      this.state.tick = 1800; // ~30s mark
+      this.phase = "gameOver";
+      this.showOutro();
+      return;
+    }
+
+    // ?intermission=N / ?intro=N URL hatch — preview the stage-transition
+    // briefing without crossing a score gate. Sets the simulated current
+    // stage to N and re-uses the normal intermission rendering path. After
+    // SPACE/tap to skip, the player drops into "ready" and the run begins
+    // at the previewed stage (matching what ?stage=N does for non-preview).
+    const previewIntermission = intermissionFromUrl();
+    if (previewIntermission !== null) {
+      this.state.stage = previewIntermission;
+      this.maybeEnterIntermission();
+      return;
     }
 
     if (this.phase === "intro") this.showIntro();
